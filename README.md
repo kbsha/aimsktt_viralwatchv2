@@ -1,4 +1,4 @@
-# aimsktt_viralwatch2
+# aimsktt_viralwatch
 by KB-Fenta and  lorrian
 Here we can work on Linux & Shell for ML Workflows
 
@@ -9,8 +9,8 @@ Step 1 — Create your project repository structure
 
 From your terminal:
 ```
-mkdir aimsktt_viralwatch2
-cd aimsktt_viralwatch2
+mkdir aimsktt_viralwatch
+cd aimsktt_viralwatch
 ```
 
 Create folders:
