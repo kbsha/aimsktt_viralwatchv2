@@ -1,30 +1,20 @@
-# aimsktt_viralwatch
-by KB-Fenta and  lorrian
-Here we can work on Linux & Shell for ML Workflows
+# ViralWatch
+ViralWatch is a five-day capstone project for KTT Fellows designed to create an end-to-end AI early-warning system for the 2026 Bundibugyo virus outbreak in the Democratic Republic of the Congo and Uganda. The system aims to close the critical response gap by detecting outbreak signals weeks earlier than traditional laboratory confirmation.
+
+## Key Project Components:
+Data Pipeline: The team integrates various public datasets—including INRB-UMIE outbreak reports and WHO Disease Outbreak News—to create a reproducible data flow.
 
 
-creat bash 
+**Machine Learning & NLP**: The system employs supervised classifiers to predict case onset, a One-Class SVM to detect anomalous pre-outbreak reporting patterns, and NLP pipelines (using Hugging Face) to extract health alerts from official WHO bulletins.
 
-Step 1 — Create your project repository structure
+**Infrastructure**: The project serves data via a FastAPI backend and displays it on a cross-border watchlist dashboard, focusing specifically on North Kivu and South Kivu zones bordering Rwanda.
 
-From your terminal:
-```
-mkdir aimsktt_viralwatch
-cd aimsktt_viralwatch
-```
 
-Create folders:
-```
-mkdir -p data/{raw,processed,external}
-mkdir -p notebooks
-mkdir -p src
-mkdir -p models
-mkdir -p reports
-mkdir -p scripts
-mkdir -p tests
-```
+## Evaluation Criteria:
 
-Your structure:
+The project is assessed based on engineering quality, data and machine learning rigor, the anomaly detection proof point (specifically catching signals before the May 15 confirmation), and the successful execution of a live demo.
+
+# Project structure:
 ```
 BDBV2026-Project/
 │
@@ -43,174 +33,3 @@ BDBV2026-Project/
 ├── requirements.txt
 └── .venv/
 ```
-Step 2 — Create the Bash setup script
-
-Create:
-```
-nano scripts/setup_project.sh
-```
-
-Save:
-
-CTRL + O
-ENTER
-CTRL + X
-
-
-
-Step 3 — Make the script executable
-```
-chmod +x scripts/setup_project.sh
-```
-
-
-
-Also check your Python environment on Windows
-
-For your virtual environment, use:
-
-Create:
-```
-python -m venv .venv
-```
-Activate:
-```
-.\.venv\Scripts\Activate.ps1
-```
-If PowerShell blocks activation, run:
-```
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-Then activate again:
-```
-.\.venv\Scripts\Activate.ps1
-```
-
-
-Step 5 — Activate your environment every time
-
-Linux:
-```
-source .venv/bin/activate
-```
-Check:
-```
-python --version
-pip list
-```
-Deactivate:
-```
-deactivate
-```
-
-Step 6 — Create data download script
-
-Create:
-```
-nano scripts/download_data.sh
-```
-
-
-Make executable:
-```
-chmod +x scripts/download_data.sh
-```
-Run:
-```
-./scripts/download_data.sh
-```
-
-Step 7 — Verify file integrity script
-
-Create:
-```
-nano scripts/verify_files.sh
-```
-
-Run:
-```
-chmod +x scripts/verify_files.sh
-./scripts/verify_files.sh
-```
-
-
-Step 8 — Create ML pipeline
-
-Create:
-```
-nano src/train_model.py
-```
-
-
-
-Step 9 — Run ML training
-
-Activate environment:
-```
-source .venv/bin/activate
-```
-Run:
-```
-python src/train_model.py
-```
-Output:
-
-Loading data...
-Training model...
-Accuracy: 0.85
-Model saved
-
-
-
-
-Step 10 — Create one command pipeline
-
-Create:
-```
-nano scripts/run_pipeline.sh
-```
-
-
-Make executable:
-```
-chmod +x scripts/run_pipeline.sh
-```
-Run everything:
-```
-./scripts/run_pipeline.sh
-```
-
-
-
-Final S3 Workflow
-
-Your daily workflow becomes:
-```
-git checkout -b feature/ml-pipeline
-
-source .venv/bin/activate
-
-./scripts/run_pipeline.sh
-
-git add .
-
-git commit -m "Add ML pipeline and shell automation"
-
-git push origin feature/ml-pipeline
-```
-Then create a Pull Request.
-
-This covers the S3 requirements:
-✅ Linux filesystem
-✅ Bash scripting
-✅ Pipes/redirection
-✅ curl downloads
-✅ Git repository cloning
-✅ Integrity checking
-✅ Python venv
-✅ pip packages
-✅ ML model training pipeline
-✅ Reproducible workflow
-
-
-
