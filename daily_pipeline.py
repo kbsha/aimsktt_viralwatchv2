@@ -1,4 +1,3 @@
-cat << 'EOF' > daily_pipeline.py
 import os
 import pandas as pd
 import numpy as np
@@ -12,13 +11,13 @@ if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     engine = create_engine(DATABASE_URL)
-    print("🔌 Connected successfully to your Cloud Aiven PostgreSQL database!")
+    print("Connected successfully to your Cloud Aiven PostgreSQL database!")
 else:
     engine = create_engine("sqlite:///data_test/viralwatch.db")
-    print("📁 DATABASE_URL not found. Saving locally to data_test/viralwatch.db.")
+    print("DATABASE_URL not found. Saving locally to data_test/viralwatch.db.")
 
 def clean_and_sync():
-    print("🧹 Starting data cleaning and transformation...")
+    print("Starting data cleaning and transformation...")
     
     # --- Table 1: Case Data & Rt Proxy ---
     cases_path = "data_test/BDBV2026_Cases_HA.csv"
@@ -30,23 +29,21 @@ def clean_and_sync():
         df_cases['health_zone'] = df_cases['health_zone'].str.strip().str.title()
         df_cases = df_cases.sort_values(by=['health_zone', 'date'])
         
-        # Handle real-world downward case revisions (cumulative counts shouldn't drop)
+        # Handle real-world downward case revisions
         df_cases['cumulative_cases'] = df_cases.groupby('health_zone')['cumulative_cases'].cummax()
         
         # Calculate Rolling 7-Day differences
         df_cases['new_cases_7d'] = df_cases.groupby('health_zone')['cumulative_cases'].diff(periods=7).fillna(0)
         df_cases['prev_cases_7d'] = df_cases.groupby('health_zone')['new_cases_7d'].shift(7).fillna(0)
         
-        # Calculate Rt Proxy (Transmission Rate Metric)
+        # Calculate Rt Proxy
         df_cases['rt_proxy'] = np.where(
             df_cases['prev_cases_7d'] > 0, 
             df_cases['new_cases_7d'] / df_cases['prev_cases_7d'], 
             0.0
         )
         
-        # ==========================================
         # DB INSERTION 1: write to 'epidemic_trends'
-        # ==========================================
         df_cases.to_sql('epidemic_trends', engine, if_exists='replace', index=False)
         print("✔ 'epidemic_trends' table written/updated in the database.")
     else:
@@ -66,9 +63,7 @@ def clean_and_sync():
             if 'health_zone' in df_cov.columns:
                 df_cov['health_zone'] = df_cov['health_zone'].str.strip().str.title()
             
-            # ==========================================
             # DB INSERTION 2: write to static tables
-            # ==========================================
             df_cov.to_sql(target_table, engine, if_exists='replace', index=False)
             print(f"✔ '{target_table}' table written/updated in the database.")
         else:
@@ -78,4 +73,3 @@ def clean_and_sync():
 
 if __name__ == "__main__":
     clean_and_sync()
-EOF
