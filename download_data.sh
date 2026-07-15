@@ -37,13 +37,8 @@ else
     find "$REPO_DIR/data" -type f \( -name "*.shp" -o -name "*.shx" -o -name "*.dbf" -o -name "*.prj" \) -exec cp {} data_test/ \;
 fi
 
-# 3. Harvest Aliases files from data/ root
-echo "🔍 Extracting entity alias lookup files..."
-cp "$REPO_DIR/data/aliases.csv" data_test/ 2>/dev/null || echo "⚠️ Check: aliases.csv not in data root"
-cp "$REPO_DIR/data/province_aliases.csv" data_test/ 2>/dev/null || echo "⚠️ Check: province_aliases.csv not in data root"
-
 # Clean up cloned repository
 rm -rf "$REPO_DIR"
 
-echo "🎉 All selected datasets + alias registries loaded into data_test/!"
+echo "🎉 All selected datasets loaded into data_test/!"
 ls -l data_test/
