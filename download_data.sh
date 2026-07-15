@@ -12,20 +12,26 @@ echo "🚀 Cloning BDBV2026-Data Repository..."
 rm -rf "$REPO_DIR"
 git clone --depth 1 "$REPO_URL"
 
-echo "🎯 Collecting requested datasets..."
+echo "🎯 Collecting selected datasets..."
 
 # 1. Copy targeted files from build/
 if [ -d "$REPO_DIR/build" ]; then
     echo "Processing build artifacts..."
+    
+    # Grab INSP, Epi cases, Cross-border, Flowminder, and Grid3 healthsites
     find "$REPO_DIR/build" -type f \( \
         -iname "insp*" -o \
         -iname "epi_cases*" -o \
-        -iname "worldpop_*" -o \
-        -iname "OSRM_*" -o \
         -iname "cross_border*" -o \
         -iname "flowminder_short*" -o \
         -iname "grid3_healthsites*" \
     \) -exec cp {} data_test/ \;
+    
+    # Explicitly target ONLY the OSRM Distance matrix CSV (ignoring duration/travel-time tables)
+    find "$REPO_DIR/build" -type f -iname "OSRM_*distance*.csv" -exec cp {} data_test/ \;
+    
+    # Grab WorldPop files
+    find "$REPO_DIR/build" -type f -iname "worldpop_*.csv" -exec cp {} data_test/ \;
 fi
 
 # 2. Extract Shapefiles from data/ directory
@@ -40,5 +46,5 @@ fi
 # Clean up cloned repository
 rm -rf "$REPO_DIR"
 
-echo "🎉 All selected datasets loaded into data_test/!"
+echo "🎉 Selective download complete!"
 ls -l data_test/
