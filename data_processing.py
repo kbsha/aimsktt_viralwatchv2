@@ -4,7 +4,6 @@ import hashlib
 import re
 import pandas as pd
 from sqlalchemy import create_engine, text
-from data_processing import clean_dataframe, process_shapefile
 
 # 1. Fetch Aiven Connection String from Environment
 DATABASE_URL = os.environ.get("DATABASE_URL")
