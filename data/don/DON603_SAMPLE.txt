@@ -1,0 +1,27 @@
+SAMPLE / SYNTHETIC BULLETIN — NOT A REAL WHO DOCUMENT.
+Replace this file with the real WHO Disease Outbreak News text (DON602, DON603, ...)
+downloaded during the project. This placeholder exists only so the /briefing
+endpoint returns something on first run. Wording here is original filler.
+
+---
+
+Bundibugyo virus disease — Democratic Republic of the Congo and Uganda
+
+As of the reporting date, national authorities have recorded 1792 confirmed cases
+and 625 deaths across the affected provinces. The outbreak, caused by a species
+with no licensed vaccine and no approved treatment, was declared a Public Health
+Emergency of International Concern.
+
+Transmission remains concentrated in North Kivu and South Kivu. Active chains have
+been reported in Goma, Nyiragongo and Rutshuru health zones, with additional cases
+under investigation in Ibanda and Minova. Several healthcare worker infections have
+been documented, raising concern about nosocomial transmission.
+
+The situation carries significant cross-border risk. Goma sits directly across the
+border from Rubavu/Gisenyi in Rwanda, and confirmed cases have been reported in
+neighbouring Uganda. Ongoing insecurity and population displacement in parts of the
+affected area continue to complicate contact tracing, and under-reporting is
+considered likely in zones with limited testing access.
+
+Response measures include enhanced surveillance at border crossings, expansion of
+treatment capacity, and community engagement in the most affected health zones.

@@ -476,3 +476,150 @@ BDBV2026-Project/
 ├── requirements.txt
 └── .venv/
 ```
+
+
+
+
+Day 3 Tasks 
+
+
+1. creating proper venv , to the proper deployment for next step 
+2. with Dashbord Draft for final deployment 
+
+So whAT WE DO IS 
+
+
+Early-warning dashboard for the 2026 Bundibugyo virus outbreak, with a
+cross-border watchlist focused on **North Kivu and South Kivu** health zones
+bordering Rwanda.
+
+**Stack:** FastAPI (API + static serving) · SQLite read-only snapshot ·
+Leaflet choropleth (free, no API key) · deployable to Render's free tier.
+
+> ⚠️ This repo ships with **synthetic demo data** FOR NOW UNTILE WE GET REAL DATA  FROM OUR TEAM DATA PIPILINE TEAM WITH API KEY 
+
+
+
+so it runs end-to-end out of
+> the box. The zone names and coordinates are real (Kivu), but the case counts,
+> scores, and polygon shapes are placeholders. See **[Swapping in real data](#5-swap-in-real-data)**.
+
+---
+
+## 1. What you get
+
+| Endpoint | What it returns |
+|---|---|
+| `GET /earlywarning` | All health zones ranked by anomaly/early-warning score (the watchlist) |
+| `GET /predict/{zone}` | Next-7-day case probability + features for one zone |
+| `GET /briefing` | NLP-extracted situation summary from the latest DON bulletin |
+| `GET /geojson` | Health-zone polygons with the current score joined on (feeds the map) |
+| `GET /health` | Liveness probe (for Render / uptime pingers) |
+| `GET /` | The dashboard (map + watchlist + briefing) |
+| `GET /docs` | Auto-generated Swagger UI |
+
+The dashboard, the ranked watchlist, and the situation briefing all read from
+those endpoints. Click any zone on the map or in the table to see its
+next-7-day probability.
+
+---
+
+## 2. Run it locally (≈2 minutes)
+
+Prerequisites: **Python 3.11+**.
+
+```bash
+# 1. create + activate a virtual environment
+python -m venv .venv
+
+# macOS / Linux / Git Bash:
+source .venv/bin/activate
+# Windows PowerShell:
+#   .\.venv\Scripts\Activate.ps1
+#   (if activation is blocked once:  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned)
+
+# 2. install runtime deps
+pip install -r requirements.txt
+
+# 3. build the read-only data snapshot (DB + GeoJSON)
+python scripts/seed_db.py
+
+# 4. start the server
+uvicorn app.main:app --reload
+```
+
+Open **http://127.0.0.1:8000** for the dashboard and
+**http://127.0.0.1:8000/docs** for the API docs.
+
+> The DB is already committed, so step 3 is optional locally — but run it any
+> time you want to regenerate the snapshot.
+
+---
+
+## 3. Project layout
+
+```
+aimsktt_viralwatch/
+├── app/                    # the FastAPI service
+│   ├── main.py             #   endpoints + serves the dashboard
+│   ├── database.py         #   read-only SQLite connection
+│   ├── models.py           #   Pydantic response schemas (power /docs)
+│   └── nlp.py              #   lightweight DON bulletin extractor
+├── dashboard/              # the frontend (served by FastAPI at /)
+│   ├── index.html
+│   ├── style.css
+│   └── app.js              #   Leaflet map + watchlist + briefing
+├── data/
+│   ├── viralwatch.db       #   read-only snapshot the API serves (committed)
+│   ├── processed/
+│   │   └── zones.geojson   #   zone boundaries (PLACEHOLDER squares for now)
+│   └── don/
+│       └── DON603_SAMPLE.txt   # replace with real WHO DON text
+├── scripts/
+│   ├── seed_db.py          #   builds viralwatch.db + zones.geojson
+│   └── shapefile_to_geojson.py  # HDX shapefile -> real GeoJSON
+├── models/                 # drop your trained classifier.joblib here
+├── notebooks/              # your Day-2..Day-4 analysis notebooks
+├── requirements.txt        # runtime (minimal — what Render installs)
+├── requirements-dev.txt    # pandas/geopandas/sklearn for building data
+└── render.yaml             # Render Blueprint (one-click deploy)
+```
+
+This service sits alongside the ML code your team keeps in `src/` — the API just
+reads the snapshot your pipeline produces.
+
+---
+
+## 6. Google Maps instead of Leaflet?
+
+Leaflet is used here because it's free, needs no API key or billing account, and
+is the standard tool for admin-boundary choropleths. If you specifically want
+Google Maps, its Maps JavaScript API can render the same GeoJSON via its Data
+layer — but note Google now requires a billing account (credit card) even inside
+the free tier, and retired the old universal $200 credit in March 2025. Since
+ViralWatch is an academic crisis-response tool, you'd qualify for Google's
+public-program map credits, but that's a "later" step and buys nothing for the
+demo.
+
+---
+
+
+
+
+
+
+Tommorow  task will be 
+
+
+we will build actual ML model to include to our main located in    
+
+ # --- plug in our  real model here -------------------------------------
+From app folder main.py 
+
+
+and also actual real time dATABASE 
+
+.
+.
+.
+

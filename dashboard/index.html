@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ViralWatch — Kivu Cross-Border Watchlist</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="pulse" aria-hidden="true"></span>
+      <div>
+        <h1>VIRALWATCH</h1>
+        <p class="tagline">Bundibugyo virus early-warning · North &amp; South Kivu cross-border watchlist</p>
+      </div>
+    </div>
+    <div class="status" id="status">
+      <div class="stat"><span class="stat-val" id="stat-cases">—</span><span class="stat-lbl">confirmed cases</span></div>
+      <div class="stat"><span class="stat-val" id="stat-deaths">—</span><span class="stat-lbl">deaths</span></div>
+      <div class="stat"><span class="stat-val" id="stat-cfr">—</span><span class="stat-lbl">case-fatality</span></div>
+      <div class="stat"><span class="stat-val" id="stat-date">—</span><span class="stat-lbl">as of</span></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="map-wrap">
+      <div id="map"></div>
+      <div class="legend" aria-label="Risk scale">
+        <span class="legend-title">Early-warning score</span>
+        <div class="ramp">
+          <span data-c="#2a9d8f"></span><span data-c="#8ab17d"></span>
+          <span data-c="#e9c46a"></span><span data-c="#f4a261"></span>
+          <span data-c="#e63946"></span>
+        </div>
+        <div class="ramp-labels"><span>0.0 low</span><span>high 1.0</span></div>
+        <div class="legend-border"><span class="rw-swatch"></span> borders Rwanda</div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-head">
+        <h2>Watchlist</h2>
+        <span class="count" id="zone-count"></span>
+      </div>
+      <div class="table-scroll">
+        <table class="watchlist">
+          <thead>
+            <tr><th>Zone</th><th>Province</th><th class="num">Score</th><th class="num">New&nbsp;7d</th></tr>
+          </thead>
+          <tbody id="watchlist-body"></tbody>
+        </table>
+      </div>
+
+      <div class="detail" id="detail" hidden>
+        <div class="detail-head"><h3 id="detail-zone"></h3><button id="detail-close" aria-label="Close">×</button></div>
+        <div class="detail-grid" id="detail-grid"></div>
+      </div>
+
+      <div class="briefing">
+        <h2>Situation briefing</h2>
+        <p id="briefing-text" class="briefing-text">Loading latest bulletin…</p>
+        <div class="flags" id="briefing-flags"></div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    <span id="foot-note">Skeleton running on <strong>synthetic demo data</strong> — replace with INRB-UMIE / INSP sitreps + HDX boundaries. See README.</span>
+    <span>Sources: INRB-UMIE · WHO DON · HDX · ECDC — attribute in the repo.</span>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
