@@ -18,59 +18,67 @@ else:
     engine = create_engine("sqlite:///data_test/viralwatch.db")
     print("📁 DATABASE_URL not found. Saving locally to data_test/viralwatch.db.")
 
-def clean_column_name(col, is_crossborder=False):
+def clean_column_name(col):
     """
-    Standardizes column headers globally.
-    If crossborder, maps strictly to your custom schema components.
+    Standardizes column headers globally to match exact patterns:
+    nom, poesmean, daily_passengersmean, weekly_passengerspoe_names, count, density
+    separating components strictly with a single underscore.
     """
     c = col.lower().strip()
     
-    if 'zone' in c or 'nom' in c or 'health_zone' in c or 'zone_sante' in c:
+    # Catch any geography/name columns and map them strictly to 'nom'
+    if c in ['health_zone', 'nom_zone', 'nom', 'zone', 'zone_de_sante', 'zone_sante', 'nom_sante']:
         return 'nom'
+    if 'weekly' in c or 'week' in c:
+        return 'weekly_passengerspoe_names'
+    if 'daily' in c or 'day' in c:
+        return 'daily_passengersmean'
+    if 'poes' in c or 'poe' in c:
+        return 'poesmean'
+    if 'density' in c:
+        return 'density'
+    if 'count' in c or 'pop' in c:
+        return 'count'
         
-    if is_crossborder:
-        if 'weekly' in c or 'week' in c:
-            return 'mean_weekly_passengers'
-        if 'daily' in c or 'day' in c:
-            return 'mean_daily_passengers'
-        if 'poe_names' in c or 'poe_name' in c or 'names' in c:
-            return 'poe_names'
-        if 'poes' in c or 'poe' in c:
-            return 'poes'
-    else:
-        # Standard cleanups for WorldPop & non-crossborder files
-        if 'density' in c:
-            return 'density'
-        if 'count' in c or 'pop' in c:
-            return 'count'
-            
     # Standard cleanup fallbacks
     c = re.sub(r'[^a-z0-9_]', '_', c)
     c = re.sub(r'_+', '_', c)
     return c.strip('_')
 
-def reorder_columns(df, is_crossborder=False):
+def reorder_columns(df):
     """
-    Reorders a DataFrame to guarantee:
-    If crossborder: nom -> poes -> mean_daily_passengers -> mean_weekly_passengers -> poe_names
-    Else: nom -> province -> count -> density
+    Reorders a DataFrame to guarantee the ultimate ordering:
+    1st: Geographic Keys (nom, province)
+    2nd: Count / Flow columns (count, poesmean, daily_passengersmean, weekly_passengerspoe_names)
+    3rd: Density columns (density)
     """
     cols = list(df.columns)
     
-    if is_crossborder:
-        target_order = ['nom', 'poes', 'mean_daily_passengers', 'mean_weekly_passengers', 'poe_names']
-        ordered_cols = [c for c in target_order if c in cols]
-        other_cols = [c for c in cols if c not in ordered_cols]
-        return df[ordered_cols + other_cols]
-    
-    # Standard ordering for WorldPop
+    # 1. Nom/Geographic Keys (prioritize 'nom' then 'province')
     key_cols = [c for c in ['nom', 'province'] if c in cols]
+    # Fallback to catch other key-like columns just in case
     key_cols += [c for c in cols if c not in key_cols and ('zone' in c or 'province' in c)]
     
-    count_cols = [c for c in cols if 'count' in c and c not in key_cols]
+    # 2. Count / Flow / Metric Columns
+    count_cols = [
+        c for c in cols 
+        if c not in key_cols and (
+            'count' in c or 
+            'mean' in c or 
+            'passenger' in c or 
+            'weekly' in c or 
+            'daily' in c or
+            'poes' in c
+        )
+    ]
+    
+    # 3. Density Columns
     density_cols = [c for c in cols if 'density' in c and c not in key_cols and c not in count_cols]
+    
+    # Remaining columns
     other_cols = [c for c in cols if c not in key_cols and c not in count_cols and c not in density_cols]
     
+    # Strictly structured ordering
     ordered_cols = key_cols + count_cols + density_cols + other_cols
     return df[ordered_cols]
 
@@ -157,8 +165,10 @@ def clean_and_sync():
             
             # Special processing for individual crossborder files
             if name_lower.startswith("cross_border"):
-                processed_df.columns = [clean_column_name(col, is_crossborder=True) for col in processed_df.columns]
-                processed_df = reorder_columns(processed_df, is_crossborder=True)
+                # 1. Clean and rename headers
+                processed_df.columns = [clean_column_name(col) for col in processed_df.columns]
+                # 2. Reorder columns using the standardized names
+                processed_df = reorder_columns(processed_df)
             
             # Save normal table to database
             processed_df.to_sql(clean_name, engine, if_exists='replace', index=False)
@@ -175,13 +185,15 @@ def clean_and_sync():
         try:
             print("🔗 Merging and formatting WorldPop dataframes...")
             
+            # Clean component headers first to ensure keys match
             if worldpop_dfs["count"] is not None:
-                worldpop_dfs["count"].columns = [clean_column_name(col, is_crossborder=False) for col in worldpop_dfs["count"].columns]
+                worldpop_dfs["count"].columns = [clean_column_name(col) for col in worldpop_dfs["count"].columns]
             if worldpop_dfs["density"] is not None:
-                worldpop_dfs["density"].columns = [clean_column_name(col, is_crossborder=False) for col in worldpop_dfs["density"].columns]
+                worldpop_dfs["density"].columns = [clean_column_name(col) for col in worldpop_dfs["density"].columns]
             
             if worldpop_dfs["count"] is not None and worldpop_dfs["density"] is not None:
                 common_keys = ['nom', 'province']
+                # Safeguard if province is missing
                 common_keys = [k for k in common_keys if k in worldpop_dfs["count"].columns and k in worldpop_dfs["density"].columns]
                 if not common_keys:
                     common_keys = [worldpop_dfs["count"].columns[0]]
@@ -196,8 +208,10 @@ def clean_and_sync():
             else:
                 merged_worldpop = worldpop_dfs["count"] if worldpop_dfs["count"] is not None else worldpop_dfs["density"]
             
-            merged_worldpop.columns = [clean_column_name(col, is_crossborder=False) for col in merged_worldpop.columns]
-            merged_worldpop = reorder_columns(merged_worldpop, is_crossborder=False)
+            # 1. Clean headers to standardize names first
+            merged_worldpop.columns = [clean_column_name(col) for col in merged_worldpop.columns]
+            # 2. Reorder columns so 'nom' is positioned first
+            merged_worldpop = reorder_columns(merged_worldpop)
             
             merged_worldpop.to_sql("worldpop_nom_count_density", engine, if_exists='replace', index=False)
             print("✔ Table 'worldpop_nom_count_density' successfully built (correct columns ordered!).")
