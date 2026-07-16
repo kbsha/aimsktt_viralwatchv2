@@ -485,6 +485,7 @@ Day 3 Tasks
 
 1. creating proper venv , to the proper deployment for next step 
 2. with Dashbord Draft for final deployment 
+3. prepAR THE DAtaset and analayz ther data , visuallize 
 
 So whAT WE DO IS 
 
