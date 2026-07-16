@@ -6,10 +6,10 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# Import custom cleaning, INSP merging, and Flowminder merging
-from data_processing import clean_dataframe, join_insp_sitrep_csvs, join_flowminder_csvs
+# Safe explicit imports (No circular reference)
+from data_processing import clean_dataframe, join_insp_sitrep_csvs, join_flowminder_csvs, join_worldpop_csvs
 
-# 1. Fetch Connection String from Environment
+# Fetch Connection String from Environment
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
@@ -23,9 +23,7 @@ else:
 
 
 def clean_column_name(col):
-    """
-    Standardizes column headers globally to lowercase separated by single underscores.
-    """
+    """Standardizes column headers globally to lowercase separated by single underscores."""
     c = col.lower().strip()
     c = re.sub(r'[^a-z0-9_]', '_', c)
     c = re.sub(r'_+', '_', c)
@@ -52,9 +50,8 @@ def clean_and_sync():
         print("⚠️ 'data_test' directory not found or empty. Falling back to root workspace directory.")
         data_dir = Path(".")
 
-    # --- 2. Zero-Loss Merge of individual INSP sitreps directly into PostgreSQL ---
+    # --- 1. Zero-Loss Merge of individual INSP sitreps directly into PostgreSQL ---
     merged_insp_path = data_dir / "insp_sitrep_merged.csv"
-    
     try:
         raw_insp_files = list(data_dir.glob("insp_sitrep*.csv"))
         if len(raw_insp_files) > 0:
@@ -79,7 +76,7 @@ def clean_and_sync():
     except Exception as e:
         print(f"❌ Critical INSP Merge failed: {e}")
 
-    # --- 3. Flowminder Custom Aggregation Loop ---
+    # --- 2. Flowminder Custom Aggregation Loop ---
     merged_flowminder_path = data_dir / "flowminder_merged.csv"
     try:
         raw_flowminder_files = list(data_dir.glob("flowminder*.csv"))
@@ -105,6 +102,32 @@ def clean_and_sync():
     except Exception as e:
         print(f"❌ Critical Flowminder Merge failed: {e}")
 
+    # --- 3. WorldPop Custom Aggregation Loop ---
+    merged_worldpop_path = data_dir / "worldpop_merged.csv"
+    try:
+        raw_worldpop_files = list(data_dir.glob("*worldpop*.csv"))
+        if len(raw_worldpop_files) > 0:
+            print("🔗 Custom aggregation on WorldPop files...")
+            wp_df = join_worldpop_csvs(input_dir=data_dir, output_path=merged_worldpop_path)
+            
+            print("🚀 Uploading 'worldpop_merged' directly to DB...")
+            wp_df = clean_dataframe(wp_df)
+            wp_df.columns = [clean_column_name(col) for col in wp_df.columns]
+            
+            wp_df.to_sql(
+                "worldpop_merged", 
+                engine, 
+                if_exists='replace', 
+                index=False,
+                method='multi',
+                chunksize=5000
+            )
+            print("✔ Table 'worldpop_merged' successfully written to Database!")
+        else:
+            print("⚠️ No WorldPop files found to merge.")
+    except Exception as e:
+        print(f"❌ Critical WorldPop Merge failed: {e}")
+
     # --- 4. Gather remaining files for standard DB sync ---
     all_files = glob.glob(os.path.join(str(data_dir), "*"))
     processed_count = 0
@@ -115,12 +138,11 @@ def clean_and_sync():
         name_lower = filename.lower()
         
         # Skip what is already merged or skipped
-        if "insp_sitrep" in name_lower or "flowminder" in name_lower:
+        if "insp_sitrep" in name_lower or "flowminder" in name_lower or "worldpop" in name_lower:
             continue
             
-        # Flexible matching for other static datasets
+        # Flexible matching for other remaining tables (Skipping cross_border / grid3)
         is_matched = (
-            "worldpop" in name_lower or
             "epi_cases" in name_lower or
             "osrm" in name_lower
         )
