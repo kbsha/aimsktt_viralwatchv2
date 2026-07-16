@@ -2,11 +2,14 @@ import os
 import glob
 import hashlib
 import re
+from pathlib import Path
 import pandas as pd
 from sqlalchemy import create_engine, text
-from data_processing import clean_dataframe, process_shapefile
 
-# 1. Fetch Aiven Connection String from Environment
+# Safe explicit imports
+from data_processing import clean_dataframe, join_insp_sitrep_csvs, join_flowminder_csvs, join_worldpop_csvs
+
+# Fetch Connection String from Environment
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
@@ -15,72 +18,17 @@ if DATABASE_URL:
     engine = create_engine(DATABASE_URL)
     print("🔌 Connected successfully to your Cloud Aiven PostgreSQL database!")
 else:
-    engine = create_engine("sqlite:///data_test/viralwatch.db")
-    print("📁 DATABASE_URL not found. Saving locally to data_test/viralwatch.db.")
+    engine = create_engine("sqlite:///viralwatch.db")
+    print("📁 DATABASE_URL not found. Saving locally to viralwatch.db.")
+
 
 def clean_column_name(col):
-    """
-    Standardizes column headers globally to match exact patterns:
-    nom, poesmean, daily_passengersmean, weekly_passengerspoe_names, count, density
-    separating components strictly with a single underscore.
-    """
+    """Standardizes column headers globally to lowercase separated by single underscores."""
     c = col.lower().strip()
-    
-    # Catch any geography/name columns and map them strictly to 'nom'
-    if c in ['health_zone', 'nom_zone', 'nom', 'zone', 'zone_de_sante', 'zone_sante', 'nom_sante']:
-        return 'nom'
-    if 'weekly' in c or 'week' in c:
-        return 'weekly_passengerspoe_names'
-    if 'daily' in c or 'day' in c:
-        return 'daily_passengersmean'
-    if 'poes' in c or 'poe' in c:
-        return 'poesmean'
-    if 'density' in c:
-        return 'density'
-    if 'count' in c or 'pop' in c:
-        return 'count'
-        
-    # Standard cleanup fallbacks
     c = re.sub(r'[^a-z0-9_]', '_', c)
     c = re.sub(r'_+', '_', c)
     return c.strip('_')
 
-def reorder_columns(df):
-    """
-    Reorders a DataFrame to guarantee the ultimate ordering:
-    1st: Geographic Keys (nom, province)
-    2nd: Count / Flow columns (count, poesmean, daily_passengersmean, weekly_passengerspoe_names)
-    3rd: Density columns (density)
-    """
-    cols = list(df.columns)
-    
-    # 1. Nom/Geographic Keys (prioritize 'nom' then 'province')
-    key_cols = [c for c in ['nom', 'province'] if c in cols]
-    # Fallback to catch other key-like columns just in case
-    key_cols += [c for c in cols if c not in key_cols and ('zone' in c or 'province' in c)]
-    
-    # 2. Count / Flow / Metric Columns
-    count_cols = [
-        c for c in cols 
-        if c not in key_cols and (
-            'count' in c or 
-            'mean' in c or 
-            'passenger' in c or 
-            'weekly' in c or 
-            'daily' in c or
-            'poes' in c
-        )
-    ]
-    
-    # 3. Density Columns
-    density_cols = [c for c in cols if 'density' in c and c not in key_cols and c not in count_cols]
-    
-    # Remaining columns
-    other_cols = [c for c in cols if c not in key_cols and c not in count_cols and c not in density_cols]
-    
-    # Strictly structured ordering
-    ordered_cols = key_cols + count_cols + density_cols + other_cols
-    return df[ordered_cols]
 
 def clean_and_sync():
     print("🔥 Starting complete database wipe-and-rebuild cycle...")
@@ -96,130 +44,182 @@ def clean_and_sync():
         except Exception as e:
             print(f"⚠️ Warning: Schema reset failed: {e}. Moving to standard table replacements.")
 
-    # Gather everything saved inside data_test
-    all_files = glob.glob(os.path.join("data_test", "*"))
+    # Determine raw data location dynamically
+    data_dir = Path("data_test")
+    if not data_dir.exists() or not any(data_dir.iterdir()):
+        print("⚠️ 'data_test' directory not found or empty. Falling back to root workspace directory.")
+        data_dir = Path(".")
+
+    # --- 1. Zero-Loss Merge of individual INSP sitreps directly into PostgreSQL ---
+    merged_insp_path = data_dir / "insp_sitrep_merged.csv"
+    try:
+        raw_insp_files = list(data_dir.glob("insp_sitrep*.csv"))
+        if len(raw_insp_files) > 0:
+            print("🔗 Merging all individual INSP sitrep CSVs into a single wide table...")
+            merged_df = join_insp_sitrep_csvs(input_dir=data_dir, output_path=merged_insp_path)
+            
+            print("🚀 Uploading 'insp_sitrep_merged' directly to DB...")
+            merged_df = clean_dataframe(merged_df)
+            merged_df.columns = [clean_column_name(col) for col in merged_df.columns]
+            
+            # Intercept automated 'health_zone' translation back to exact 'nom' requirement
+            if 'health_zone' in merged_df.columns:
+                merged_df = merged_df.rename(columns={'health_zone': 'nom'})
+            
+            # Force 'nom' to be the first column in the DB output
+            if 'nom' in merged_df.columns:
+                cols = ['nom'] + [col for col in merged_df.columns if col != 'nom']
+                merged_df = merged_df[cols]
+            
+            merged_df.to_sql(
+                "insp_sitrep_merged", 
+                engine, 
+                if_exists='replace', 
+                index=False,
+                method='multi',
+                chunksize=5000
+            )
+            print("✔ Table 'insp_sitrep_merged' successfully written to Database!")
+        else:
+            print("⚠️ No individual INSP files found to merge.")
+    except Exception as e:
+        print(f"❌ Critical INSP Merge failed: {e}")
+
+    # --- 2. Flowminder Custom Aggregation Loop ---
+    merged_flowminder_path = data_dir / "flowminder_merged.csv"
+    try:
+        raw_flowminder_files = list(data_dir.glob("flowminder*.csv"))
+        if len(raw_flowminder_files) > 0:
+            print("🔗 Custom aggregation on Flowminder files...")
+            flow_df = join_flowminder_csvs(input_dir=data_dir, output_path=merged_flowminder_path)
+            
+            print("🚀 Uploading 'flowminder_merged' directly to DB...")
+            flow_df = clean_dataframe(flow_df)
+            flow_df.columns = [clean_column_name(col) for col in flow_df.columns]
+            
+            # Intercept automated 'health_zone' translation back to exact 'nom' requirement
+            if 'health_zone' in flow_df.columns:
+                flow_df = flow_df.rename(columns={'health_zone': 'nom'})
+            
+            # Force 'nom' to be the first column in the DB output
+            if 'nom' in flow_df.columns:
+                cols = ['nom'] + [col for col in flow_df.columns if col != 'nom']
+                flow_df = flow_df[cols]
+            
+            flow_df.to_sql(
+                "flowminder_merged", 
+                engine, 
+                if_exists='replace', 
+                index=False,
+                method='multi',
+                chunksize=5000
+            )
+            print("✔ Table 'flowminder_merged' successfully written to Database!")
+        else:
+            print("⚠️ No Flowminder files found to merge.")
+    except Exception as e:
+        print(f"❌ Critical Flowminder Merge failed: {e}")
+
+    # --- 3. WorldPop Custom Aggregation Loop ---
+    merged_worldpop_path = data_dir / "worldpop_merged.csv"
+    try:
+        raw_worldpop_files = list(data_dir.glob("*worldpop*.csv"))
+        if len(raw_worldpop_files) > 0:
+            print("🔗 Custom aggregation on WorldPop files...")
+            wp_df = join_worldpop_csvs(input_dir=data_dir, output_path=merged_worldpop_path)
+            
+            print("🚀 Uploading 'worldpop_merged' directly to DB...")
+            wp_df = clean_dataframe(wp_df)
+            wp_df.columns = [clean_column_name(col) for col in wp_df.columns]
+            
+            # Intercept automated 'health_zone' translation back to exact 'nom' requirement
+            if 'health_zone' in wp_df.columns:
+                wp_df = wp_df.rename(columns={'health_zone': 'nom'})
+            
+            # Force 'nom' to be the first column in the DB output
+            if 'nom' in wp_df.columns:
+                cols = ['nom'] + [col for col in wp_df.columns if col != 'nom']
+                wp_df = wp_df[cols]
+            
+            wp_df.to_sql(
+                "worldpop_merged", 
+                engine, 
+                if_exists='replace', 
+                index=False,
+                method='multi',
+                chunksize=5000
+            )
+            print("✔ Table 'worldpop_merged' successfully written to Database!")
+        else:
+            print("⚠️ No WorldPop files found to merge.")
+    except Exception as e:
+        print(f"❌ Critical WorldPop Merge failed: {e}")
+
+    # --- 4. Gather remaining files for standard DB sync ---
+    all_files = glob.glob(os.path.join(str(data_dir), "*"))
     processed_count = 0
     
-    # Structure to hold WorldPop files for merging
-    worldpop_dfs = {"count": None, "density": None}
-    
+    print(f"📂 Scanning remaining files for standard uploads...")
     for file_path in all_files:
         filename = os.path.basename(file_path)
         name_lower = filename.lower()
         
-        # Determine if file is targeted
+        # Skip what is already merged or skipped
+        if "insp_sitrep" in name_lower or "flowminder" in name_lower or "worldpop" in name_lower:
+            continue
+            
+        # Flexible matching for other remaining tables (Skipping cross_border / grid3)
         is_matched = (
-            name_lower.startswith("insp") or
-            name_lower.startswith("epi_cases") or
-            name_lower.startswith("worldpop_") or
-            name_lower.startswith("osrm_") or
-            name_lower.startswith("cross_border") or
-            name_lower.startswith("flowminder_short") or
-            name_lower.startswith("grid3_healthsites") or
-            name_lower.endswith(".shp")
+            "epi_cases" in name_lower or
+            "osrm" in name_lower
         )
         
         if not is_matched:
             continue
             
+        # Clean standard SQL table name
         clean_name = (filename.lower()
                       .replace(".matrix.csv", "_matrix")
                       .replace(".csv", "")
-                      .replace(".shp", "_shapefile")
                       .replace("__", "_")
                       .replace(".", "_")
                       .replace("-", "_"))
+        clean_name = re.sub(r'_+', '_', clean_name).strip('_')
         
-        # PostgreSQL limit safety: Truncate table names if they exceed 60 characters
         if len(clean_name) > 60:
             name_hash = hashlib.md5(clean_name.encode('utf-8')).hexdigest()[:6]
             clean_name = f"{clean_name[:50]}_{name_hash}"
-        
-        if any(name_lower.endswith(ext) for ext in [".shx", ".dbf", ".prj", ".cpg"]):
-            continue
 
-        # Dynamic Route: Group WorldPop Components
-        if name_lower.startswith("worldpop_"):
-            try:
-                print(f"🌍 Reading WorldPop Component: '{filename}'")
-                raw_df = pd.read_csv(file_path)
-                processed_df = clean_dataframe(raw_df)
-                
-                if "density" in name_lower:
-                    worldpop_dfs["density"] = processed_df
-                else:
-                    worldpop_dfs["count"] = processed_df
-                continue 
-            except Exception as e:
-                print(f"❌ Failed to extract WorldPop segment '{filename}': {e}")
-                continue
-
-        print(f"📦 Re-building Table: '{clean_name}' from raw file...")
+        print(f"📦 Re-building Table: '{clean_name}' from raw file: '{filename}'...")
         
         try:
-            if name_lower.endswith(".shp"):
-                processed_df = process_shapefile(file_path)
-            else:
-                raw_df = pd.read_csv(file_path)
-                processed_df = clean_dataframe(raw_df)
+            raw_df = pd.read_csv(file_path)
+            processed_df = clean_dataframe(raw_df)
+            processed_df.columns = [clean_column_name(col) for col in processed_df.columns]
             
-            # Special processing for individual crossborder files
-            if name_lower.startswith("cross_border"):
-                # 1. Clean and rename headers
-                processed_df.columns = [clean_column_name(col) for col in processed_df.columns]
-                # 2. Reorder columns using the standardized names
-                processed_df = reorder_columns(processed_df)
+            # Intercept standard columns to match 'nom' first too if applicable
+            if 'health_zone' in processed_df.columns:
+                processed_df = processed_df.rename(columns={'health_zone': 'nom'})
+                
+            if 'nom' in processed_df.columns:
+                cols = ['nom'] + [col for col in processed_df.columns if col != 'nom']
+                processed_df = processed_df[cols]
             
-            # Save normal table to database
-            processed_df.to_sql(clean_name, engine, if_exists='replace', index=False)
+            processed_df.to_sql(
+                clean_name, 
+                engine, 
+                if_exists='replace', 
+                index=False,
+                method='multi',
+                chunksize=5000
+            )
             print(f"✔ Table '{clean_name}' completely replaced.")
             processed_count += 1
             
         except Exception as e:
             print(f"❌ Failed to process '{filename}': {e}")
-
-    # ==========================================
-    # Dynamic Join: Merge & Order WorldPop
-    # ==========================================
-    if worldpop_dfs["count"] is not None or worldpop_dfs["density"] is not None:
-        try:
-            print("🔗 Merging and formatting WorldPop dataframes...")
             
-            # Clean component headers first to ensure keys match
-            if worldpop_dfs["count"] is not None:
-                worldpop_dfs["count"].columns = [clean_column_name(col) for col in worldpop_dfs["count"].columns]
-            if worldpop_dfs["density"] is not None:
-                worldpop_dfs["density"].columns = [clean_column_name(col) for col in worldpop_dfs["density"].columns]
-            
-            if worldpop_dfs["count"] is not None and worldpop_dfs["density"] is not None:
-                common_keys = ['nom', 'province']
-                # Safeguard if province is missing
-                common_keys = [k for k in common_keys if k in worldpop_dfs["count"].columns and k in worldpop_dfs["density"].columns]
-                if not common_keys:
-                    common_keys = [worldpop_dfs["count"].columns[0]]
-                
-                merged_worldpop = pd.merge(
-                    worldpop_dfs["count"], 
-                    worldpop_dfs["density"], 
-                    on=common_keys, 
-                    how="outer", 
-                    suffixes=('_count', '_density')
-                )
-            else:
-                merged_worldpop = worldpop_dfs["count"] if worldpop_dfs["count"] is not None else worldpop_dfs["density"]
-            
-            # 1. Clean headers to standardize names first
-            merged_worldpop.columns = [clean_column_name(col) for col in merged_worldpop.columns]
-            # 2. Reorder columns so 'nom' is positioned first
-            merged_worldpop = reorder_columns(merged_worldpop)
-            
-            merged_worldpop.to_sql("worldpop_nom_count_density", engine, if_exists='replace', index=False)
-            print("✔ Table 'worldpop_nom_count_density' successfully built (correct columns ordered!).")
-            processed_count += 1
-        except Exception as e:
-            print(f"❌ Failed to join combined WorldPop table: {e}")
-            
-    print(f"🎉 Complete! All previous tables cleared; {processed_count} tables deployed successfully.")
+    print(f"🎉 Complete! All database configurations synchronized safely.")
 
 if __name__ == "__main__":
     clean_and_sync()
