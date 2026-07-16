@@ -58,13 +58,16 @@ def clean_and_sync():
     OSRM_PATH = "https://raw.githubusercontent.com/INRB-UMIE/BDBV2026-Data/main/build/matrix/osrm__travel_time__static.matrix.csv"
     
     workspace_root = Path(".").resolve()
-    SITREP_PATH = find_path_fallback("insp_sitrep_training_window.csv", workspace_root / "output/insp_sitrep_training_window.csv")
     
+    # Establish data_test as the directory for all local read/write operations
     data_dir = workspace_root / "data_test"
     if not data_dir.exists():
         data_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save output CSV to data_test/
+    # 1. We look for the input sitrep file directly inside data_test/
+    SITREP_PATH = find_path_fallback("insp_sitrep_training_window.csv", data_dir / "insp_sitrep_training_window.csv")
+    
+    # 2. We save the output features directly inside data_test/
     OUT_PATH = data_dir / "osrm_nearest_active_feature.csv"
 
     # --- 1. Custom OSRM Calculation Feature Generation & DB Upload ---
