@@ -6,8 +6,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# 1. Import your custom cleaning and merging tools from data_processing.py
-from data_processing import clean_dataframe, join_insp_sitrep_csvs
+
 
 # 2. Fetch Connection String from Environment
 DATABASE_URL = os.environ.get("DATABASE_URL")
