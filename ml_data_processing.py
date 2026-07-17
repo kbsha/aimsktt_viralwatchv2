@@ -1,156 +1,114 @@
 import os
-import json
-import glob
-import pandas as pd
+import re
 from pathlib import Path
-from tqdm import tqdm
+import pandas as pd
+import numpy as np
 
-# --- Path Configurations ---
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-INPUT_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, "BDBV2026-Data/data/public_health_response/processed"))
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output", "nlp")
-FINAL_TABLE_PATH = os.path.join(OUTPUT_DIR, "nlp_result.csv")
+# --- Helper Normalization Rules (Consistent with data_processing.py) ---
+def clean_text_column(series: pd.Series) -> pd.Series:
+    """Removes stray brackets, quotes, normalized spaces, and title-cases names."""
+    return (series.astype(str)
+            .str.replace(r"[\[\]'\" ]", "", regex=True)
+            .str.strip()
+            .str.title())
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# --- Dynamic Class Mapping (Zero-Shot) ---[cite: 3]
-PILLAR_CLASSES = {
-    "community_engagement": ["rumor management", "sensitization", "radio broadcast", "community resistance"],
-    "coordination": ["meeting", "strategic planning", "resource allocation", "partner coordination"],
-    "infection_prevention_controle": ["decontamination", "safe burials", "training", "ppe distribution"],
-    "laboratory": ["testing", "sample transport", "equipment breakdown", "stockout"],
-    "logistics": ["vehicles and transport", "medical supplies", "infrastructure", "communication"],
-    "management": ["patient admission", "patient discharge", "death", "bed capacity"],
-    "monitoring": ["contact tracing", "active case search", "alert investigation", "point of entry screening"],
-    "protection_sexual_exploitation_abuse": ["training", "reporting", "victim support", "awareness"],
-    "security": ["armed attack", "roadblock", "kidnapping", "general instability"]
-}
-
-def run_nlp_pipeline():
-    """Runs Zero-Shot, Summarization, NER, and Emotion classifications over datasets."""
-    
-    # --- LAZY IMPORTS (Strictly scoped inside function execution) ---
-    try:
-        from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-    except ModuleNotFoundError as e:
-        print("\n" + "="*60)
-        print("❌ ERROR: Missing deep learning dependencies for NLP stage.")
-        print("Please install them using: pip install transformers torch")
-        print("="*60 + "\n")
-        raise e
-
-    print("🤖 Initializing NLP Models on CPU...")
-    
-    # 1. Zero-Shot[cite: 3]
-    zero_shot_pipeline = pipeline("zero-shot-classification", model="valhalla/distilbart-mnli-12-3", device=-1)
-    
-    # 2. Summarization[cite: 4]
-    sum_tokenizer = AutoTokenizer.from_pretrained("sshleifer/distilbart-cnn-12-6")
-    sum_model = AutoModelForSeq2SeqLM.from_pretrained("sshleifer/distilbart-cnn-12-6")
-    
-    # 3. NER[cite: 5]
-    ner_pipeline = pipeline("ner", model="dslim/bert-base-NER", aggregation_strategy="simple", device=-1)
-    
-    # 4. Emotion[cite: 6]
-    emotion_pipeline = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", device=-1)
-
-    # Gather target operational logs[cite: 3, 5, 6]
-    files = glob.glob(os.path.join(INPUT_DIR, "*_en__daily.csv"))
-    if not files:
-        # Fallback search if path structure shifts[cite: 3, 5, 6]
-        files = [str(p) for p in Path(PROJECT_ROOT).rglob("*_en__daily.csv") if "output" not in str(p)]
-        
-    print(f"Found {len(files)} target files for consolidated pipeline execution.")
-    master_records = []
-
-    for file_path in files:
-        filename = os.path.basename(file_path)
-        df = pd.read_csv(file_path)
-        
-        # Enforce column constraint rules
-        if df.shape[1] < 3:
-            print(f"Skipping {filename}: requires at least [Geography, Date, Text] structure.")
-            continue
-            
-        geo_col, date_col, text_col = df.columns[0], df.columns[1], df.columns[2]
-        
-        # Identify pillar context[cite: 3]
-        current_pillar = next((p for p in PILLAR_CLASSES.keys() if p in filename), None)
-        if not current_pillar:
-            print(f"Skipping {filename}: unable to map target pillar template.")
-            continue
-            
-        candidate_labels = PILLAR_CLASSES[current_pillar][cite: 3]
-        print(f"\nProcessing Pillar [{current_pillar}] from file: {filename}")
-        
-        # Filter for rows that actually contain tracking text
-        valid_df = df[df[text_col].notna() & (df[text_col].astype(str).str.strip() != "")].copy()
-        
-        if valid_df.empty:
-            continue
-
-        for idx, row in tqdm(valid_df.iterrows(), total=len(valid_df), desc="Analyzing entries"):
-            raw_text = str(row[text_col])
-            
-            # --- Job 1: Zero-Shot Classification ---[cite: 3]
-            try:
-                zs_res = zero_shot_pipeline(raw_text[:1500], candidate_labels, multi_label=False)[cite: 3]
-                zeroshot_json = json.dumps({"class": zs_res['labels'][0], "score": round(float(zs_res['scores'][0]), 4)})[cite: 3]
-            except Exception as e:
-                zeroshot_json = json.dumps({"error": str(e)})[cite: 3]
-
-            # --- Job 2: Text Summarization ---[cite: 4]
-            words_count = len(raw_text.split())
-            if words_count < 20:[cite: 4]
-                summary_json = json.dumps({"summary": raw_text})[cite: 4]
-            else:
-                try:
-                    max_len = min(60, max(20, int(words_count * 0.6)))[cite: 4]
-                    min_len = min(10, max_len - 5)[cite: 4]
-                    inputs = sum_tokenizer(raw_text[:2000], return_tensors="pt", max_length=1024, truncation=True)[cite: 4]
-                    summary_ids = sum_model.generate(inputs["input_ids"], max_length=max_len, min_length=min_len, num_beams=2, early_stopping=True)[cite: 4]
-                    summary_text = sum_tokenizer.decode(summary_ids[0], skip_special_tokens=True)[cite: 4]
-                    summary_json = json.dumps({"summary": summary_text})[cite: 4]
-                except Exception as e:
-                    summary_json = json.dumps({"error": str(e)})[cite: 4]
-
-            # --- Job 3: Named Entity Recognition (NER) ---[cite: 5]
-            try:
-                entities = ner_pipeline(raw_text[:1500])[cite: 5]
-                formatted_entities = [{"type": e['entity_group'], "value": e['word'], "score": round(float(e['score']), 4)} for e in entities][cite: 5]
-                ner_json = json.dumps(formatted_entities)[cite: 5]
-            except Exception as e:
-                ner_json = json.dumps([{"error": str(e)}])[cite: 5]
-
-            # --- Job 4: Emotion Extraction ---[cite: 6]
-            try:
-                em_res = emotion_pipeline(raw_text[:1500])[cite: 6]
-                emotion_json = json.dumps({"label": em_res[0]['label'], "score": round(float(em_res[0]['score']), 4)})[cite: 6]
-            except Exception as e:
-                emotion_json = json.dumps({"error": str(e)})[cite: 6]
-
-            # Append to master collector array
-            master_records.append({
-                "health_zone": str(row[geo_col]).strip().replace(r"[\[\]'\" ]", ""),
-                "date": pd.to_datetime(row[date_col]).strftime("%Y-%m-%d"),
-                "pillar": current_pillar,
-                "source_file": filename,
-                "raw_text": raw_text,
-                "zeroshot_json": zeroshot_json,
-                "summary_json": summary_json,
-                "ner_json": ner_json,
-                "emotion_json": emotion_json
-            })
-
-    # Save to final consolidated relational table
-    if master_records:
-        nlp_result_df = pd.DataFrame(master_records)
-        nlp_result_df.to_csv(FINAL_TABLE_PATH, index=False)
-        print(f"\nSuccess! Table [nlp_result] successfully compiled at: {FINAL_TABLE_PATH}")
-        return nlp_result_df
+def calculate_days_since_first_case(cases_df: pd.DataFrame) -> pd.DataFrame:
+    """Calculates chronological days elapsed since a health zone logged its first case."""
+    df = cases_df.copy()
+    if df.shape[1] == 3:
+        df.columns = ['health_zone', 'date', 'value']
     else:
-        print("⚠️ Processing finished, but no valid records were produced.")
-        return pd.DataFrame()
+        # Fallback if structure varies
+        df.columns = ['health_zone', 'date', 'value'] + list(df.columns[3:])
 
-if __name__ == "__main__":
-    run_nlp_pipeline()
+    df['health_zone'] = clean_text_column(df['health_zone'])
+    df['date'] = pd.to_datetime(df['date'].astype(str).str.replace(r"[\[\]'\" ]", "", regex=True), errors='coerce')
+    df['value'] = pd.to_numeric(df['value'], errors='coerce').fillna(0).astype(int)
+    
+    # Identify dates where a positive confirmed case occurred
+    positive_cases = df[df['value'] > 0]
+    first_case_dates = positive_cases.groupby('health_zone')['date'].min().reset_index()
+    first_case_dates.rename(columns={'date': 'first_case_date'}, inplace=True)
+    
+    df = pd.merge(df, first_case_dates, on='health_zone', how='left')
+    
+    # Compute relative days delta
+    df['days_since_first_case'] = (df['date'] - df['first_case_date']).dt.days
+    df['days_since_first_case'] = df['days_since_first_case'].fillna(0)
+    df.loc[df['days_since_first_case'] < 0, 'days_since_first_case'] = 0
+    df['days_since_first_case'] = df['days_since_first_case'].astype(int)
+    
+    df.drop(columns=['first_case_date'], inplace=True)
+    return df
+
+
+def load_population_density(filepath: Path | str) -> pd.DataFrame:
+    """Loads and formats WorldPop density metrics safely."""
+    df = pd.read_csv(filepath, header=None)
+    
+    if df.shape[1] == 3:
+        df.columns = ['health_zone', 'date', 'pop_density']
+        df = df[['health_zone', 'pop_density']].drop_duplicates()
+    else:
+        df.columns = ['health_zone', 'pop_density']
+    
+    df['health_zone'] = clean_text_column(df['health_zone'])
+    df['pop_density'] = pd.to_numeric(df['pop_density'], errors='coerce').fillna(0)
+    return df
+
+
+def extract_distance_to_epicenter(matrix_filepath: Path | str, epicenter_name: str = "Bunia") -> pd.DataFrame:
+    """Extracts positional travel time durations relative to a defined outbreak epicenter."""
+    # Load wide-format matrix with the first column as index
+    df_matrix = pd.read_csv(matrix_filepath, index_col=0)
+    
+    # Safely clean row index and column dimensions
+    df_matrix.index = clean_text_column(pd.Series(df_matrix.index, index=df_matrix.index))
+    df_matrix.columns = [clean_text_column(pd.Series([col])).iloc[0] for col in df_matrix.columns]
+    
+    epicenter_clean = epicenter_name.strip().title()
+    if epicenter_clean in df_matrix.columns:
+        # Reset the index to turn index labels into 'health_zone'
+        df_distance = df_matrix[[epicenter_clean]].reset_index()
+        df_distance.columns = ['health_zone', 'travel_time_to_epicenter']
+    else:
+        raise ValueError(f"Could not locate the epicenter column '{epicenter_clean}' inside the OSRM matrix.")
+        
+    return df_distance
+
+
+def assemble_model_data(df_cases: pd.DataFrame, df_pop: pd.DataFrame, df_travel: pd.DataFrame) -> pd.DataFrame:
+    """Left-joins temporal sitrep metrics with spatial population and travel boundaries."""
+    master_df = df_cases.copy()
+    master_df['health_zone'] = clean_text_column(master_df['health_zone'])
+    
+    master_df = pd.merge(master_df, df_pop, on='health_zone', how='left')
+    master_df = pd.merge(master_df, df_travel, on='health_zone', how='left')
+    
+    master_df['pop_density'] = master_df['pop_density'].fillna(0)
+    master_df['travel_time_to_epicenter'] = master_df['travel_time_to_epicenter'].fillna(-1)
+    return master_df
+
+
+def create_target_variable(df: pd.DataFrame) -> pd.DataFrame:
+    """Calculates forward looking window aggregations to binarize risk labels."""
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values(by=['health_zone', 'date']).reset_index(drop=True)
+    
+    # Extract absolute daily delta metric from cumulative baseline
+    df['new_cases_today'] = df.groupby('health_zone')['value'].diff().fillna(0)
+    df.loc[df['new_cases_today'] < 0, 'new_cases_today'] = 0 
+    
+    # Calculate case threshold counts over a 7-day rolling window
+    df['cases_next_7_days'] = df.groupby('health_zone')['new_cases_today'].transform(
+        lambda x: x.shift(-7).rolling(window=7, min_periods=1).sum()
+    )
+    
+    # Binarize label: 1 implies outbreak confirmed, 0 implies dormant
+    df['target_outbreak_next_7d'] = (df['cases_next_7_days'] > 0).astype(int)
+    
+    # Drop records that fall short of the forward looking window scope
+    df = df.dropna(subset=['cases_next_7_days']).copy()
+    df = df.drop(columns=['new_cases_today', 'cases_next_7_days'])
+    return df
