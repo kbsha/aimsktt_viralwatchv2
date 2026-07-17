@@ -1,19 +1,12 @@
 """Lightweight signal extraction from WHO Disease Outbreak News (DON) bulletins.
 
 WHY RULE-BASED AND NOT A HUGGING FACE TRANSFORMER HERE:
-
-
-if you have any idea ... we can add working Hugging Face NER / zero-shot code here, but it won't run on Render's free web service.
-
-
-
-
 Render's free web service has ~512 MB RAM. transformers + torch will not fit,
 and would make cold starts painfully slow. So the *served* /briefing endpoint
 uses a small, dependency-free extractor (regex + a zone gazetteer).
 
 For the assessment's NLP requirement, run the heavy Hugging Face NER / zero-shot
-pipeline in your Day-4 notebook against the same DON text, and either (a) cache
+pipeline in our notebook against the same DON text, and either (a) cache
 its output to a JSON the API reads, or (b) deploy the model on a paid instance.
 The interface below stays the same either way.
 """
