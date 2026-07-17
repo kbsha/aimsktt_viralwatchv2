@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+# --- Configuration Constants ---
 COLUMN_TRANSLATIONS = {
     "date_notification": "date",
     "date_rapport": "date",
@@ -24,6 +25,28 @@ STATUS_TRANSLATIONS = {
     "oui": "yes", "non": "no", "vrai": "true", "faux": "false",
     "suspect": "suspected", "confirme": "confirmed", "decede": "deceased"
 }
+
+DROP_SUFFIXES = ("__static", ".matrix")
+KEEP_FLOWMINDER_PREFIX = "flowminder_short_trips__"
+
+# --- ML Trimming & Missingness Config ---
+COLLINEAR_DROP_COLS = [
+    "total_poe_hand_washing", "total_poe_passed", "total_poe_sanitised",
+    "total_poe_refused_hand_washing",
+    "flowminder_short_trips__outflow_20260430",
+    "flowminder_short_trips__outflow_20260507",
+    "flowminder_short_trips__outflow_20260514",
+    "flowminder_short_trips__outflow_20260521",
+    "flowminder_short_trips__ituri_subscriber_days_prior_20260503",
+    "flowminder_short_trips__nk_subscriber_days_prior_20260503",
+]
+NATIONAL_PREFIX = "national_"
+HIGH_MISSING_THRESHOLD = 0.70
+TARGET_COL = "new_suspected_cases"
+DROP_SECONDARY_COLS = [
+    "new_contacts_listed", "cumulative_contacts_traced",
+    "cumulative_confirmed_deaths", "new_suspected_deaths",
+]
 
 
 def remove_accents(series: pd.Series) -> pd.Series:
@@ -78,25 +101,152 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_fixed_matrix(osrm_path: str | Path) -> pd.DataFrame:
+def join_insp_sitrep_csvs(input_dir: Path | str, output_path: Path | str) -> pd.DataFrame:
+    """Join all individual INSP SitRep CSV files on (nom, date) into a wide table."""
+    input_dir = Path(input_dir)
+    output_path = Path(output_path)
+
+    csv_files = sorted(input_dir.glob("insp_sitrep*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"No insp_sitrep*.csv files found in {input_dir}")
+
+    frames: list[pd.DataFrame] = []
+    skipped_files: list[str] = []
+
+    for csv_path in csv_files:
+        with csv_path.open("r", encoding="utf-8") as handle:
+            first_line = handle.readline().strip().split(",")
+
+        if len(first_line) >= 2 and first_line[0].strip().lower() == "nom" and first_line[1].strip().lower() == "date":
+            df = pd.read_csv(csv_path)
+        else:
+            df = pd.read_csv(csv_path, header=None)
+            if df.shape[1] >= 3:
+                df = df.iloc[:, :3].copy()
+                df.columns = ["nom", "date", "value"]
+            else:
+                print(f"Skipping {csv_path.name}: expected at least 3 columns")
+                skipped_files.append(csv_path.name)
+                continue
+
+        if {"nom", "date"}.difference(df.columns):
+            print(f"Skipping {csv_path.name}: missing required columns")
+            skipped_files.append(csv_path.name)
+            continue
+
+        value_columns = [column for column in df.columns if column not in {"nom", "date"}]
+        if len(value_columns) != 1:
+            raise ValueError(f"{csv_path.name} must contain exactly one value column; found {value_columns}")
+
+        metric_name = csv_path.stem.split("__")[1] if len(csv_path.stem.split("__")) >= 2 else value_columns[0]
+        frame = df[["nom", "date", value_columns[0]]].copy()
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        frame.rename(columns={value_columns[0]: metric_name}, inplace=True)
+        frames.append(frame)
+
+    if not frames:
+        raise RuntimeError(f"No frames to merge. Skipped files: {skipped_files}")
+
+    merged = frames[0]
+    for frame in frames[1:]:
+        merged = pd.merge(merged, frame, on=["nom", "date"], how="outer")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    merged.to_csv(output_path, index=False)
+    return merged
+
+
+def _read_flowminder_frame(csv_path: Path) -> pd.DataFrame | None:
+    """Read one Flowminder CSV as a two-column geography/value frame."""
+    with csv_path.open("r", encoding="utf-8") as handle:
+        first_line = handle.readline().strip().split(",")
+
+    header_row = (
+        len(first_line) >= 2
+        and first_line[0].strip().lower() in {"nom", "zone_de_sante", "zone_sante", "zone"}
+        and first_line[1].strip().lower() in {"value", "inflow", "outflow", "date"}
+    )
+
+    if header_row:
+        frame = pd.read_csv(csv_path)
+    else:
+        frame = pd.read_csv(csv_path, header=None)
+        if frame.shape[1] < 2:
+            return None
+        frame = frame.iloc[:, :2].copy()
+        frame.columns = ["nom", "value"]
+
+    if frame.shape[1] < 2:
+        return None
+
+    frame = frame.iloc[:, :2].copy()
+    frame.columns = ["nom", "value"]
+    return frame
+
+
+def join_flowminder_csvs(input_dir: Path | str, output_path: Path | str) -> pd.DataFrame:
+    """Join individual Flowminder CSVs on geographical key ('nom') into a wide DataFrame."""
+    input_dir = Path(input_dir)
+    output_path = Path(output_path)
+
+    csv_files = sorted(input_dir.glob("flowminder*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"No flowminder*.csv files found in {input_dir}")
+
+    frames: list[pd.DataFrame] = []
+    skipped_files: list[str] = []
+
+    for csv_path in csv_files:
+        frame = _read_flowminder_frame(csv_path)
+        if frame is None:
+            print(f"Skipping {csv_path.name}: expected at least 2 columns")
+            skipped_files.append(csv_path.name)
+            continue
+
+        feature_name = csv_path.stem
+        feature_frame = frame[["nom", "value"]].copy()
+        feature_frame.rename(columns={"value": feature_name}, inplace=True)
+        frames.append(feature_frame)
+
+    if not frames:
+        raise RuntimeError(f"No frames to merge. Skipped files: {skipped_files}")
+
+    merged = frames[0]
+    join_col = "nom"
+    for frame in frames[1:]:
+        merged = pd.merge(merged, frame, on=join_col, how="outer")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    merged.to_csv(output_path, index=False)
+    return merged
+
+
+def load_fixed_matrix(osrm_path: Path, aliases_path: Path) -> pd.DataFrame:
+    """Loads OSRM Matrix, applies positional diag-0 validation and resolves aliases."""
     df = pd.read_csv(osrm_path, index_col=0)
-    
-    if df.empty or (len(df.columns) < 2 and "version" in str(df.index[0])):
-         raise ValueError("The resolved OSRM file is a Git LFS placeholder instead of real data.")
-
     row_noms = df["nom"].tolist()
-
     dest_cols = [c for c in df.columns if c != "nom"]
+    
     diag = pd.Series([df.loc[df.index[i], dest_cols[i]] for i in range(len(row_noms))])
     if not (diag == 0).all():
-        raise ValueError("Self-distance is not 0 for every zone!")
+         raise ValueError("Self-distance is not 0 for every zone! Positional columns alignment broken.")
 
     df.columns = ["nom"] + row_noms
+    
+    try:
+        aliases = pd.read_csv(aliases_path)
+        alias_map = dict(zip(aliases["observed_name"], aliases["canonical_nom"]))
+        df["nom"] = df["nom"].replace(alias_map)
+        df.columns = ["nom"] + [alias_map.get(c, c) for c in df.columns[1:]]
+    except Exception as e:
+        print(f"⚠️ Alias resolution skipped or failed: {e}")
+
     return df.set_index("nom")
 
 
-def compute_osrm_nearest_active(osrm_path: str | Path, sitrep_path: Path, out_path: Path = None) -> pd.DataFrame:
-    matrix = load_fixed_matrix(osrm_path)
+def compute_osrm_nearest_active(osrm_path: Path, aliases_path: Path, sitrep_path: Path, out_path: Path) -> pd.DataFrame:
+    """Calculates travel time from every zone to its nearest active-case counterpart."""
+    matrix = load_fixed_matrix(osrm_path, aliases_path)
     sitrep = pd.read_csv(sitrep_path)
     sitrep["date"] = pd.to_datetime(sitrep["date"])
 
@@ -115,159 +265,97 @@ def compute_osrm_nearest_active(osrm_path: str | Path, sitrep_path: Path, out_pa
             records.append({"nom": zone, "date": date, "min_minutes_to_active_zone": t})
 
     result = pd.DataFrame(records)
-    
-    if out_path:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        result.to_csv(out_path, index=False)
-        
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    result.to_csv(out_path, index=False)
     return result
 
 
-def join_insp_sitrep_csvs(input_dir: Path | str, output_path: Path | str) -> pd.DataFrame:
-    input_dir = Path(input_dir)
-    output_path = Path(output_path)
-    csv_files = sorted(input_dir.glob("insp_sitrep*.csv"))
-    if not csv_files:
-        return pd.DataFrame(columns=["nom", "date"])
-
-    frames = []
-    for csv_path in csv_files:
-        try:
-            df = pd.read_csv(csv_path)
-            df.columns = df.columns.str.lower().str.strip()
-            cols_to_drop = [col for col in df.columns if col in ['unnamed: 0', 'index']]
-            if cols_to_drop:
-                df = df.drop(columns=cols_to_drop)
-
-            rename_map = {}
-            for col in df.columns:
-                if col in ['nom', 'zone_sante', 'zone_de_sante', 'nom_zone', 'health_zone']:
-                    rename_map[col] = 'nom'
-                elif col in ['date', 'jour', 'date_rapport', 'date_notification']:
-                    rename_map[col] = 'date'
-            
-            df = df.rename(columns=rename_map)
-            if 'nom' not in df.columns and len(df.columns) > 0:
-                df.rename(columns={df.columns[0]: 'nom'}, inplace=True)
-            if 'date' not in df.columns and len(df.columns) > 1:
-                df.rename(columns={df.columns[1]: 'date'}, inplace=True)
-
-            if 'nom' not in df.columns or 'date' not in df.columns:
-                continue
-
-            df['date'] = df['date'].astype(str).str.strip()
-            value_columns = [col for col in df.columns if col not in ['nom', 'date']]
-            
-            if not value_columns:
-                df[f"has_data_{csv_path.stem}"] = 1
-                value_columns = [f"has_data_{csv_path.stem}"]
-
-            file_prefix = csv_path.stem.split("__")[1] if len(csv_path.stem.split("__")) >= 2 else csv_path.stem
-            for col in value_columns:
-                if col in ['value', 'cases', 'count', 'valeur', 'nd']:
-                    df.rename(columns={col: file_prefix}, inplace=True)
-
-            frames.append(df)
-        except Exception as e:
-            print(f"❌ Failed to parse {csv_path.name}: {e}")
-
-    if not frames:
-        return pd.DataFrame(columns=["nom", "date"])
-
-    merged = frames[0]
-    for i, frame in enumerate(frames[1:], start=1):
-        merged = pd.merge(merged, frame, on=["nom", "date"], how="outer", suffixes=('', f'_dup_{i}'))
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    merged.to_csv(output_path, index=False)
-    return merged
-
-
-def join_flowminder_csvs(input_dir: Path | str, output_path: Path | str) -> pd.DataFrame:
-    input_dir = Path(input_dir)
-    output_path = Path(output_path)
-    csv_files = sorted(input_dir.glob("flowminder*.csv"))
-    if not csv_files:
-        raise FileNotFoundError("No flowminder files.")
-
-    frames = []
-    for csv_path in csv_files:
-        df = pd.read_csv(csv_path)
-        df.columns = [str(c).lower().strip() for c in df.columns]
-        geo_col = df.columns[0]
-        val_col = df.columns[1] if len(df.columns) > 1 else None
-        
-        if val_col:
-            df_clean = df[[geo_col, val_col]].copy()
-            df_clean.columns = ["nom", csv_path.stem]
-            frames.append(df_clean)
-
-    if not frames:
-        raise ValueError("No valid flowminder frames.")
-
-    merged = frames[0]
-    for frame in frames[1:]:
-        merged = pd.merge(merged, frame, on="nom", how="outer")
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    merged.to_csv(output_path, index=False)
-    return merged
-
-
-def join_worldpop_csvs(input_dir: Path | str, output_path: Path | str) -> pd.DataFrame:
-    input_dir = Path(input_dir)
-    output_path = Path(output_path)
-    all_csvs = list(input_dir.glob("*.csv"))
+def clean_and_merge_flowminder(flow_merged_path: Path, out_path: Path) -> pd.DataFrame:
+    """Cleans Flowminder DataFrame by dropping static duplicated fields."""
+    df = pd.read_csv(flow_merged_path)
     
-    count_file, density_file = None, None
-    for f in all_csvs:
-        name = f.name.lower()
-        if "density" in name:
-            density_file = f
-        elif "count" in name:
-            count_file = f
-
-    def _extract_metric(file_path: Path, metric_name: str) -> pd.DataFrame:
-        df = pd.read_csv(file_path)
-        df.columns = [str(c).lower().strip() for c in df.columns]
-        
-        geo_col = None
-        for col in df.columns:
-            if any(k in col for k in ["zone", "nom", "health", "sante"]):
-                geo_col = col
-                break
-        if not geo_col:
-            geo_col = df.columns[0]
+    for col in df.columns:
+        if col != "nom":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
             
-        val_col = None
-        for col in df.columns:
-            if col != geo_col and any(k in col for k in ["value", "sum", "pop", "count", "density", "mean"]):
-                val_col = col
-                break
-        if not val_col and len(df.columns) > 1:
-            val_col = df.columns[1]
+    keep_cols = ["nom"] + [
+        c for c in df.columns
+        if c.startswith(KEEP_FLOWMINDER_PREFIX) and not c.endswith(DROP_SUFFIXES)
+    ]
+    clean_df = df[keep_cols].copy()
+    
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    clean_df.to_csv(out_path, index=False)
+    return clean_df
 
-        if val_col:
-            df_clean = df[[geo_col, val_col]].copy()
-            df_clean.columns = ["nom", metric_name]
-        else:
-            df_clean = pd.DataFrame(columns=["nom", metric_name])
-            df_clean["nom"] = df[geo_col]
-            df_clean[metric_name] = np.nan
-        return df_clean
 
-    df_count = _extract_metric(count_file, "count") if count_file else pd.DataFrame(columns=["nom", "count"])
-    df_density = _extract_metric(density_file, "density") if density_file else pd.DataFrame(columns=["nom", "density"])
-
-    if not df_count.empty and not df_density.empty:
-        merged = pd.merge(df_count, df_density, on="nom", how="outer")
-    elif not df_count.empty:
-        merged = df_count
-        merged["density"] = np.nan
-    else:
-        merged = df_density
-        merged["count"] = np.nan
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    merged.to_csv(output_path, index=False)
+def merge_worldpop(pop_count_path: Path, pop_density_path: Path, out_path: Path) -> pd.DataFrame:
+    """Merges WorldPop count & density files."""
+    df_count = pd.read_csv(pop_count_path, header=None, names=["nom", "pop_count"], encoding="utf-8-sig")
+    df_density = pd.read_csv(pop_density_path, header=None, names=["nom", "pop_density"], encoding="utf-8-sig")
+    
+    merged = pd.merge(df_count, df_density, on="nom", how="outer")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    merged.to_csv(out_path, index=False)
     return merged
+
+
+def create_training_table(sitrep_path: Path, osrm_path: Path, flow_path: Path, worldpop_path: Path, out_path: Path) -> pd.DataFrame:
+    """Left-joins cleaned data features on sitrep's (nom, date) index anchor."""
+    sitrep = pd.read_csv(sitrep_path, parse_dates=["date"])
+    osrm = pd.read_csv(osrm_path, parse_dates=["date"])
+    flow = pd.read_csv(flow_path)
+    wp = pd.read_csv(worldpop_path)
+
+    df = sitrep.merge(osrm, on=["nom", "date"], how="left")
+    df = df.merge(flow, on="nom", how="left")
+    df = df.merge(wp, on="nom", how="left")
+
+    # Force "nom" (health zone) and "date" to be the first two columns
+    first_cols = ["nom", "date"]
+    remaining_cols = [col for col in df.columns if col not in first_cols]
+    df = df[first_cols + remaining_cols]
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, index=False)
+    return df
+
+
+def trim_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Trims collinear/redundant and national summary features."""
+    national_cols = [c for c in df.columns if c.startswith(NATIONAL_PREFIX)]
+    all_drop = COLLINEAR_DROP_COLS + national_cols
+
+    missing_from_df = [c for c in all_drop if c not in df.columns]
+    if missing_from_df:
+        raise ValueError(f"Expected columns not found: {missing_from_df}")
+
+    return df.drop(columns=all_drop)
+
+
+def handle_missingness(df: pd.DataFrame) -> pd.DataFrame:
+    """Implements missingness cleanup, forward-fills, and specific-imputation strategies."""
+    # 1. Drop highly sparse columns
+    high_missing = df.isna().mean() > HIGH_MISSING_THRESHOLD
+    drop_cols = high_missing[high_missing].index.tolist()
+    df = df.drop(columns=drop_cols)
+
+    # 2. Forward fill cumulative variables per zone
+    cum_cols = [c for c in df.columns if c.startswith("cumulative_")]
+    df = df.sort_values(["nom", "date"])
+    df[cum_cols] = df.groupby("nom")[cum_cols].ffill()
+
+    # 3. Drop rows missing the target variable
+    df = df[df[TARGET_COL].notna()].copy()
+
+    # 4. Drop minor operational variables
+    present_secondary = [c for c in DROP_SECONDARY_COLS if c in df.columns]
+    df = df.drop(columns=present_secondary)
+
+    # 5. Impute Flowminder signal loss with 0
+    flow_cols = [c for c in df.columns if c.startswith(KEEP_FLOWMINDER_PREFIX)]
+    df[flow_cols] = df[flow_cols].fillna(0)
+
+    # 6. Drop remaining NaN rows
+    df = df.dropna()
+    return df.sort_values("date", ascending=True)

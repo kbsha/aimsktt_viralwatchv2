@@ -1,0 +1,40 @@
+name: Run Daily Pipeline
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Main Repository
+        uses: actions/checkout@v4
+
+      - name: Checkout Remote Data Repository (No LFS)
+        uses: actions/checkout@v4
+        with:
+          repository: 'INRB-UMIE/BDBV2026-Data'
+          path: 'BDBV2026-Data'
+          lfs: false
+        env:
+          GIT_LFS_SKIP_SMUDGE: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy sqlalchemy requests psycopg2-binary
+
+      - name: Run pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python daily_pipeline.py
