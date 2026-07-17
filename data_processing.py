@@ -684,28 +684,28 @@ def trim_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def handle_missingness(df: pd.DataFrame) -> pd.DataFrame:
-    """Implements missingness cleanup, forward-fills, and specific-imputation strategies[cite: 6]."""
-    # 1. Drop highly sparse columns[cite: 6]
+    """Implements missingness cleanup, forward-fills, and specific-imputation strategies."""
+    # 1. Drop highly sparse columns
     high_missing = df.isna().mean() > HIGH_MISSING_THRESHOLD
     drop_cols = high_missing[high_missing].index.tolist()
     df = df.drop(columns=drop_cols)
 
-    # 2. Forward fill cumulative variables per zone[cite: 6]
+    # 2. Forward fill cumulative variables per zone
     cum_cols = [c for c in df.columns if c.startswith("cumulative_")]
     df = df.sort_values(["nom", "date"])
     df[cum_cols] = df.groupby("nom")[cum_cols].ffill()
 
-    # 3. Drop rows missing the target variable[cite: 6]
+    # 3. Drop rows missing the target variable
     df = df[df[TARGET_COL].notna()].copy()
 
-    # 4. Drop minor operational variables[cite: 6]
+    # 4. Drop minor operational variables
     present_secondary = [c for c in DROP_SECONDARY_COLS if c in df.columns]
     df = df.drop(columns=present_secondary)
 
-    # 5. Impute Flowminder signal loss with 0[cite: 6]
+    # 5. Impute Flowminder signal loss with 0
     flow_cols = [c for c in df.columns if c.startswith(KEEP_FLOWMINDER_PREFIX)]
     df[flow_cols] = df[flow_cols].fillna(0)
 
-    # 6. Drop remaining NaN rows[cite: 6]
+    # 6. Drop remaining NaN rows
     df = df.dropna()
     return df.sort_values("date", ascending=True)
