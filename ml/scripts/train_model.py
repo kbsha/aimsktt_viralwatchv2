@@ -8,6 +8,7 @@ from tensorflow.keras import layers
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, average_precision_score
+import matplotlib.pyplot as plt
 
 
 filepath = "/content/final_ml_training_dataset.csv"
@@ -124,3 +125,40 @@ keras_save_path = os.path.join(models_dir, "keras_outbreak_model.keras")
 model.save(keras_save_path)
 print(f"   [+] Keras Model saved to: {keras_save_path}")
 print("\nTraining and saving pipeline complete!")
+
+print("\n5. Generating Training & Overfitting Graphs...")
+
+# Set up a 1x2 grid for the plots
+plt.figure(figsize=(14, 5))
+
+# --- Plot 1: Training vs Validation Loss ---
+# This is the best indicator of overfitting.
+plt.subplot(1, 2, 1)
+plt.plot(history.history['loss'], label='Training Loss', color='blue', linewidth=2)
+plt.plot(history.history['val_loss'], label='Validation Loss', color='red', linewidth=2)
+plt.title('Model Loss (Diagnosing Overfitting)')
+plt.xlabel('Epochs')
+plt.ylabel('Binary Crossentropy Loss')
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.7)
+
+# --- Plot 2: Training vs Validation PR-AUC ---
+# This shows how well the model separates the classes.
+plt.subplot(1, 2, 2)
+plt.plot(history.history['pr_auc'], label='Training PR-AUC', color='blue', linewidth=2)
+plt.plot(history.history['val_pr_auc'], label='Validation PR-AUC', color='red', linewidth=2)
+plt.title('Model PR-AUC (Performance)')
+plt.xlabel('Epochs')
+plt.ylabel('Precision-Recall AUC')
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.7)
+
+plt.tight_layout()
+
+# Save the plot to your models directory so you can include it in your repo/presentation
+plot_path = os.path.join(models_dir, "training_curves.png")
+plt.savefig(plot_path)
+print(f"   [+] Training curves saved to: {plot_path}")
+
+# Display the graphs on your screen
+plt.show()
