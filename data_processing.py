@@ -223,22 +223,19 @@ def join_flowminder_csvs(input_dir: Path | str, output_path: Path | str) -> pd.D
 
 def load_fixed_matrix(osrm_path: Path, aliases_path: Path) -> pd.DataFrame:
     """Loads OSRM wide matrix, normalizes layout, maps aliases, and validates self-distance diagonal."""
-    # Read matrix while forcing the first column (health zones) to act as row labels (index)
     df = pd.read_csv(osrm_path, index_col=0)
     
-    # Standardize string formatting
     def clean_name(val):
         return re.sub(r"[\[\]'\" ]", "", str(val)).strip().title()
 
     df.index = [clean_name(idx) for idx in df.index]
     df.columns = [clean_name(col) for col in df.columns]
 
-    # Validate distance self-identity (diagonal of static travel matrix must be 0)
+    # Validate self-distance identity (where diagonal entries should represent 0 travel time)
     diag = pd.Series([df.iloc[i, i] for i in range(min(df.shape))])
     if not (diag == 0).all():
-         raise ValueError("Self-distance is not 0 for every zone! Positional columns alignment broken.")
+         raise ValueError("Self-distance is not 0 for every zone! Matrix structure mapping mismatch.")
 
-    # Apply health zone aliases/canonical names
     try:
         aliases = pd.read_csv(aliases_path)
         aliases.columns = [c.lower().strip() for c in aliases.columns]
@@ -251,15 +248,13 @@ def load_fixed_matrix(osrm_path: Path, aliases_path: Path) -> pd.DataFrame:
             aliases[standard_col].apply(clean_name)
         ))
         
-        # Map indices and column elements
         df.index = df.index.map(lambda x: alias_map.get(x, x))
         df.columns = df.columns.map(lambda x: alias_map.get(x, x))
         
-        # Deduplicate indices or columns if alias conversions overlap
         df = df.loc[~df.index.duplicated(keep='first')]
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
     except Exception as e:
-        print(f"⚠️ Alias resolution skipped or failed: {e}")
+        print(f"⚠️ Alias mapping skipped or failed: {e}")
 
     df.index.name = "nom"
     return df
@@ -270,10 +265,9 @@ def compute_osrm_nearest_active(osrm_path: Path, aliases_path: Path, sitrep_path
     # 1. Load localized, sanitized travel matrix 
     matrix = load_fixed_matrix(osrm_path, aliases_path)
     
-    # 2. Load compiled sitreps & enforce strict datetime formats (avoiding warning parser fallbacks)
+    # 2. Load compiled sitreps & enforce strict datetime formats
     sitrep = pd.read_csv(sitrep_path)
     
-    # Safely clean up date strings prior to parser call
     cleaned_dates = sitrep["date"].astype(str).str.replace(r"[\[\]'\" ]", "", regex=True)
     sitrep["date"] = pd.to_datetime(cleaned_dates, format="%Y-%m-%d", errors="coerce")
     sitrep = sitrep.dropna(subset=["date"])
@@ -285,7 +279,6 @@ def compute_osrm_nearest_active(osrm_path: Path, aliases_path: Path, sitrep_path
     # 3. Vectorized active-zone calculation
     matrix_zones = set(matrix.columns)
     
-    # Identify entries where an outbreak is present AND the zone matches a known matrix entry
     active_cases = sitrep[(sitrep["cumulative_suspected_cases"] > 0) & (sitrep["nom"].isin(matrix_zones))]
     
     if active_cases.empty:
@@ -295,25 +288,28 @@ def compute_osrm_nearest_active(osrm_path: Path, aliases_path: Path, sitrep_path
         result.to_csv(out_path, index=False)
         return result
 
-    # Group zones having active clusters together chronologically
     active_by_date = active_cases.groupby("date")["nom"].unique()
 
     records = []
-    # Loop across active dates (vastly faster than row-by-row sitrep evaluation)
+    # Loop across unique dates
     for date, active_zones in active_by_date.items():
-        # Subset matrix columns to only include active zones
-        sub_matrix = matrix[list(active_zones)]
-        # Row-wise minimum yields distance from all known locations to closest active zone
-        min_time = sub_matrix.min(axis=1)
+        sub_matrix = matrix[list(active_zones)].copy()
         
-        # Unroll results into flat records
+        # --- SOLUTION: Convert negative indicators (such as -1) to NaN ---
+        sub_matrix[sub_matrix < 0] = np.nan
+        
+        # Row-wise minimum calculation while explicitly skipping NaN routes
+        min_time = sub_matrix.min(axis=1, skipna=True)
+        
         date_str = date.strftime("%Y-%m-%d")
         for zone, t in min_time.items():
-            records.append({
-                "nom": zone,
-                "date": date_str,
-                "min_minutes_to_active_zone": t
-            })
+            # Exclude records that do not contain a single valid, reachable route
+            if pd.notna(t):
+                records.append({
+                    "nom": zone,
+                    "date": date_str,
+                    "min_minutes_to_active_zone": t
+                })
 
     result = pd.DataFrame(records)
     out_path.parent.mkdir(parents=True, exist_ok=True)
