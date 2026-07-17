@@ -1,5 +1,5 @@
 # aimsktt_viralwatch2
-by KB-Fenta and  lorrian
+by KB-Fenta and  Lorraine
 Here we can work on Linux & Shell for ML Workflows
 
 

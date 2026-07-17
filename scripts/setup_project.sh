@@ -24,11 +24,11 @@
 
 # echo "[2/6] Cloning INRB-UMIE/BDBV2026-Data..."
 
-# if [ ! -d "data/external/BDBV2026-Data" ]; then
+# if [ ! -d "data/BDBV2026-Data" ]; then
 
 # git clone \
 # https://github.com/INRB-UMIE/BDBV2026-Data.git \
-# data/external/BDBV2026-Data
+# data/BDBV2026-Data
 
 # else
 
