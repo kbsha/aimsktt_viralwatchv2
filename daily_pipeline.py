@@ -35,11 +35,11 @@ else:
 
 # --- Local Paths ---
 DATA_REPO_DIR = Path("BDBV2026-Data")
-BUILD_LONG_DIR = DATA_REPO_DIR / "build" / "long"
 BUILD_DIR = DATA_REPO_DIR / "build"
+BUILD_LONG_DIR = DATA_REPO_DIR / "build" / "long"
 
-# Source configurations
-OSRM_PATH = BUILD_LONG_DIR / "osrm__travel_time.csv"
+# Source configurations - Swapped to the static matrix file in the build/ folder
+OSRM_PATH = BUILD_DIR / "osrm__travel_time__static.matrix.csv"
 ALIASES_PATH = DATA_REPO_DIR / "data" / "aliases.csv"
 WP_COUNT_PATH = BUILD_LONG_DIR / "worldpop__pop_count.csv"
 WP_DENSITY_PATH = BUILD_LONG_DIR / "worldpop__pop_density.csv"
@@ -260,7 +260,7 @@ def run_pipeline():
         # Dynamic inputs pointing to generated pipeline CSV pathways
         raw_sitrep_filepath = output_dir / "insp_sitrep_training_window.csv"
         pop_filepath = BUILD_LONG_DIR / "worldpop__pop_density.csv"
-        matrix_filepath = BUILD_LONG_DIR / "osrm__travel_time.csv"
+        matrix_filepath = OSRM_PATH  # Pointing to the newly configured static matrix file path
         
         # A. Execute Processing Flow
         print("   -> Calculating days since initial case benchmark...")
