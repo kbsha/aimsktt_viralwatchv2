@@ -155,10 +155,16 @@ plt.grid(True, linestyle='--', alpha=0.7)
 
 plt.tight_layout()
 
-# Save the plot to your models directory so you can include it in your repo/presentation
-plot_path = os.path.join(models_dir, "training_curves.png")
-plt.savefig(plot_path)
-print(f"   [+] Training curves saved to: {plot_path}")
+# ==========================================
+# THE FIX: Save to the specific loss directory
+# ==========================================
+# Define the exact path you requested for Colab
+loss_dir = "/content/ml/scripts/loss"
 
-# Display the graphs on your screen
-plt.show()
+# Tell Python to create this folder if it doesn't exist yet
+os.makedirs(loss_dir, exist_ok=True)
+
+# Save the image into that new folder
+plot_path = os.path.join(loss_dir, "training_curves.png")
+plt.savefig(plot_path)
+print(f"   [+] Training curves saved successfully to: {plot_path}")
