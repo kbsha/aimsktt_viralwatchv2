@@ -1,1 +1,12 @@
-
+# Only needed on your laptop to rebuild the data snapshot or train models.
+# NOT installed on Render — keep these out of requirements.txt so the web
+# service stays small (geopandas + sklearn are heavy).
+-r requirements.txt
+pandas>=2.0
+numpy>=1.24
+geopandas>=0.14      # shapefile -> GeoJSON conversion
+scikit-learn>=1.3    # baseline classifier + One-Class SVM
+joblib>=1.3          # save/load trained models
+# Optional, for the Day-4 Hugging Face NLP work in a notebook (heavy):
+# transformers>=4.40
+# torch>=2.2
