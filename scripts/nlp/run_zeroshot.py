@@ -1,5 +1,6 @@
 import os
 import glob
+import json
 import pandas as pd
 from transformers import pipeline
 from tqdm import tqdm
@@ -53,21 +54,17 @@ for file_path in files:
         
         def classify_text(text):
             if not isinstance(text, str) or not text.strip():
-                return pd.Series([None, None])
+                return "{}"
             try:
                 # Truncate text to avoid token limits
                 res = zero_shot_pipeline(text[:1500], candidate_labels, multi_label=False)
                 # Return the top predicted class and its score
-                return pd.Series([res['labels'][0], res['scores'][0]])
+                return json.dumps({"class": res['labels'][0], "score": round(float(res['scores'][0]), 4)})
             except Exception as e:
-                return pd.Series([f"Error: {str(e)}", None])
+                return json.dumps({"error": str(e)})
                 
         tqdm.pandas(desc=f"Zero-Shot: {filename[:30]}...")
-        zs_df = df.loc[valid_mask, text_col].progress_apply(classify_text)
-        zs_df.columns = ['zeroshot_class', 'zeroshot_score']
-        
-        df.loc[valid_mask, 'zeroshot_class'] = zs_df['zeroshot_class']
-        df.loc[valid_mask, 'zeroshot_score'] = zs_df['zeroshot_score']
+        df.loc[valid_mask, 'zeroshot_json'] = df.loc[valid_mask, text_col].progress_apply(classify_text)
     
     out_path = os.path.join(OUTPUT_DIR, filename)
     df.to_csv(out_path, index=False)

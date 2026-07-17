@@ -1,5 +1,6 @@
 import os
 import glob
+import json
 import pandas as pd
 from transformers import pipeline
 from tqdm import tqdm
@@ -27,19 +28,19 @@ for file_path in files:
         
         def extract_entities(text):
             if not isinstance(text, str) or not text.strip():
-                return ""
+                return "[]"
             try:
                 # Truncate text to avoid token limit errors
                 entities = ner_pipeline(text[:1500])
-                # Filter out low confidence if needed, but for now just format
-                return " | ".join([f"{e['entity_group']}: {e['word']}" for e in entities])
+                formatted_entities = [{"type": e['entity_group'], "value": e['word'], "score": round(float(e['score']), 4)} for e in entities]
+                return json.dumps(formatted_entities)
             except Exception as e:
-                return f"Error: {str(e)}"
+                return json.dumps([{"error": str(e)}])
                 
         # Apply only to valid rows
         tqdm.pandas(desc=f"NER: {filename[:30]}...")
         entities_col = df.loc[valid_mask, text_col].progress_apply(extract_entities)
-        df.loc[valid_mask, 'ner_entities'] = entities_col
+        df.loc[valid_mask, 'ner_json'] = entities_col
     
     out_path = os.path.join(OUTPUT_DIR, filename)
     df.to_csv(out_path, index=False)

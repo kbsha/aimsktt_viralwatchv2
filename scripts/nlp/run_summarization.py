@@ -1,5 +1,6 @@
 import os
 import glob
+import json
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from tqdm import tqdm
@@ -30,30 +31,24 @@ for file_path in files:
                 return ""
             # Too short to summarize effectively
             if len(text.split()) < 20: 
-                return text
+                return json.dumps({"summary": text})
             try:
                 # Dynamic length bounds to avoid model errors
                 input_len = len(text.split())
                 max_len = min(60, max(20, int(input_len * 0.6)))
                 min_len = min(10, max_len - 5)
                 
-                # Truncate text to avoid token limits, generate using model directly
+                # Truncate text to avoid token limits
                 inputs = tokenizer(text[:2000], return_tensors="pt", max_length=1024, truncation=True)
-                summary_ids = model.generate(
-                    inputs["input_ids"], 
-                    max_length=max_len, 
-                    min_length=min_len, 
-                    num_beams=2, 
-                    early_stopping=True
-                )
-                return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-            
+                summary_ids = model.generate(inputs["input_ids"], max_length=max_len, min_length=min_len, num_beams=2, early_stopping=True)
+                summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+                return json.dumps({"summary": summary_text})
             except Exception as e:
-                return f"Error: {str(e)}"
+                return json.dumps({"error": str(e)})
                 
         tqdm.pandas(desc=f"Summarizing: {filename[:30]}...")
         summary_col = df.loc[valid_mask, text_col].progress_apply(generate_summary)
-        df.loc[valid_mask, 'summary'] = summary_col
+        df.loc[valid_mask, 'summary_json'] = summary_col
     
     out_path = os.path.join(OUTPUT_DIR, filename)
     df.to_csv(out_path, index=False)

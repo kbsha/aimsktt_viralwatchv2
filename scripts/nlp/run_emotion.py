@@ -1,5 +1,6 @@
 import os
 import glob
+import json
 import pandas as pd
 from transformers import pipeline
 from tqdm import tqdm
@@ -27,20 +28,16 @@ for file_path in files:
         
         def extract_emotion(text):
             if not isinstance(text, str) or not text.strip():
-                return pd.Series([None, None])
+                return "{}"
             try:
                 # Truncate text to avoid token limits
                 res = emotion_pipeline(text[:1500])
-                return pd.Series([res[0]['label'], res[0]['score']])
+                return json.dumps({"label": res[0]['label'], "score": round(float(res[0]['score']), 4)})
             except Exception as e:
-                return pd.Series([f"Error: {str(e)}", None])
+                return json.dumps({"error": str(e)})
                 
         tqdm.pandas(desc=f"Emotion: {filename[:30]}...")
-        emotion_df = df.loc[valid_mask, text_col].progress_apply(extract_emotion)
-        emotion_df.columns = ['emotion_label', 'emotion_score']
-        
-        df.loc[valid_mask, 'emotion_label'] = emotion_df['emotion_label']
-        df.loc[valid_mask, 'emotion_score'] = emotion_df['emotion_score']
+        df.loc[valid_mask, 'emotion_json'] = df.loc[valid_mask, text_col].progress_apply(extract_emotion)
     
     out_path = os.path.join(OUTPUT_DIR, filename)
     df.to_csv(out_path, index=False)
