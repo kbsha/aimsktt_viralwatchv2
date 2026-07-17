@@ -28,14 +28,13 @@ def get_outbreak_prediction(input_data, model, scaler, model_type='rf'):
     display_string = f"{risk_probability * 100:.1f}%"
 
     # 4. PRINT DIRECTLY TO SCREEN
-    print(f"\n--- {model_type.upper()} MODEL PREDICTION ---")
+    # print(f"\n--- {model_type.upper()} MODEL PREDICTION ---")
     print(f"Outbreak Probability: {display_string}")
     
     if risk_probability >= 0.5:
-        print("Status: ⚠️ HIGH RISK (Threshold Exceeded)")
+        print("Status: HIGH RISK ")
     else:
-        print("Status: ✅ LOW RISK")
-    print("----------------------------------\n")
+        print("Status: LOW RISK")
 
     # 5. Return the structured payload
     return {
