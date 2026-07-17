@@ -1,4 +1,3 @@
-
 # Render Blueprint — infra as code.
 # In Render: New > Blueprint, point at this repo, and it provisions the service.
 # (Satisfies the "one-command setup" deliverable.)
@@ -10,3 +9,7 @@ services:
     buildCommand: "pip install -r requirements.txt"
     # $PORT is injected by Render. The prebuilt data/viralwatch.db is committed,
     # so no database provisioning step is needed.
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
