@@ -78,7 +78,17 @@ def main():
             print(f"  !! {date.date()}: active zone(s) not found in matrix, skipped: {skipped}")
         if not valid_active:
             continue
-        min_time = matrix[valid_active].min(axis=1)
+        # exclude each zone from its OWN nearest-active-zone search --
+        # without this, any zone that's already active trivially matches
+        # itself at distance 0, which defeats the point of the feature
+        # (measuring proximity to OTHER active zones, not "do I have any
+        # case history at all"). Confirmed this bug affected 76/79 rows
+        # (96%) before this fix.
+        sub = matrix[valid_active].copy()
+        for z in valid_active:
+            if z in sub.index:
+                sub.loc[z, z] = float("nan")
+        min_time = sub.min(axis=1, skipna=True)
         for zone, t in min_time.items():
             records.append({"nom": zone, "date": date, "min_minutes_to_active_zone": t})
 
