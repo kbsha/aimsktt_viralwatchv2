@@ -9,6 +9,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, average_precision_score
 import matplotlib.pyplot as plt
+from tensorflow.keras.callbacks import EarlyStopping
 
 
 filepath = "/content/final_ml_training_dataset.csv"
@@ -85,13 +86,20 @@ weight_for_1 = (1 / pos) * (total / 2.0)
 class_weights = {0: weight_for_0, 1: weight_for_1}
 
 # Train the network
+# Create the Early Stopping mechanism
+early_stopper = EarlyStopping(
+    monitor='val_loss',          # Watch the validation loss
+    patience=5,                  # Wait 5 epochs to see if it improves before stopping
+    restore_best_weights=True    # 🌟 THE MAGIC FIX: Automatically roll back to the best epoch!
+)
 history = model.fit(
     X_train_scaled, y_train,
-    epochs=30,
+    epochs=50,                   # You can increase this safely now
     batch_size=32,
     validation_data=(X_test_scaled, y_test),
     class_weight=class_weights,
-    verbose=1 # Will print progress bars to the terminal
+    callbacks=[early_stopper],   # <--- Add the stopper here
+    verbose=1 
 )
 
 # Final evaluation using Keras
@@ -159,7 +167,7 @@ plt.tight_layout()
 # THE FIX: Save to the specific loss directory
 # ==========================================
 # Define the exact path you requested for Colab
-loss_dir = "/content/ml/scripts/loss"
+loss_dir = "/content/aimsktt_viralwatch/ml/loss_graphs"
 
 # Tell Python to create this folder if it doesn't exist yet
 os.makedirs(loss_dir, exist_ok=True)
