@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: viralwatch
+    name: viralwatch-docker-test
     runtime: docker
     plan: free
 
     image:
-      url: kbshafenta/viralwatch:v1
+      url: docker.io/kbshafenta/viralwatch:v1
 
     envVars:
       - key: DATABASE_URL
