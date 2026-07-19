@@ -13,7 +13,7 @@ joblib
 pytest
 # Database Integration (Cloud Postgres & Local SQLite support)
 SQLAlchemy>=2.0.0
-psycopg2-binary>=2.9.0
+# psycopg2-binary>=2.9.0
 
 # NLP Processing
 transformers
@@ -34,6 +34,12 @@ tqdm
 # The API uses only these + the Python standard library (sqlite3, json, re).
 fastapi>=0.110
 uvicorn[standard]>=0.29
+
+
+
+
+psycopg[binary]>=3.1.0
+
 
 
 
