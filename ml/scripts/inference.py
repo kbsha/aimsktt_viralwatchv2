@@ -68,7 +68,8 @@ test_probabilities = rf_model.predict_proba(X_test_scaled)[:, 1]
 
 print("4. Saving results to CSV...")
 results_df = test_df.copy()
-results_df['predicted_probability_next_7d'] = test_probabilities
+results_df['predicted_probability_next_7d'] = np.round(test_probabilities, 2)
+# results_df['predicted_probability_next_7d'] = test_probabilities
 results_df['probability_display'] = (results_df['predicted_probability_next_7d'] * 100).round(1).astype(str) + '%'
 
 # Define the output path and save
