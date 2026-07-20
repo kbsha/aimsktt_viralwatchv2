@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from bs4 import BeautifulSoup
 
-DON_DIR = Path(__file__).resolve().parent.parent / "data" / "don"
-
+# DON_DIR = Path(__file__).resolve().parent.parent / "data" / "don"
+DON_DIR = Path(__file__).resolve().parent.parent / "who_dons"  
 SEVERITY_TERMS = [
     "public health emergency", "pheic", "cross-border", "no licensed vaccine",
     "no approved treatment", "healthcare worker", "nosocomial", "case fatality",
@@ -26,11 +27,20 @@ SEVERITY_TERMS = [
 BORDER_TERMS = ["rwanda", "uganda", "burundi", "goma", "rubavu", "gisenyi", "border"]
 
 
+# def _latest_don() -> Path | None:
+#     if not DON_DIR.exists():
+#         return None
+#     txts = sorted(DON_DIR.glob("*.txt"))
+#     return txts[-1] if txts else None
+
+
 def _latest_don() -> Path | None:
     if not DON_DIR.exists():
         return None
-    txts = sorted(DON_DIR.glob("*.txt"))
-    return txts[-1] if txts else None
+
+    htmls = sorted(DON_DIR.glob("*.html"))
+
+    return htmls[-1] if htmls else None
 
 
 def _first_int(pattern: str, text: str) -> int | None:
@@ -56,12 +66,23 @@ def extract_briefing(known_zones: list[str]) -> dict:
             "cross_border_mentions": [],
         }
 
-    text = path.read_text(encoding="utf-8", errors="ignore")
+    # text = path.read_text(encoding="utf-8", errors="ignore")
+    html = path.read_text(encoding="utf-8", errors="ignore")
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Remove scripts and styles
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+
+    text = soup.get_text(separator=" ", strip=True)
+
     low = text.lower()
 
     total_cases = _first_int(r"([\d,\s]+)\s+confirmed cases", text)
     total_deaths = _first_int(r"([\d,\s]+)\s+deaths", text)
     cfr = None
+
     if total_cases and total_deaths and total_cases > 0:
         cfr = round(100 * total_deaths / total_cases, 1)
 
