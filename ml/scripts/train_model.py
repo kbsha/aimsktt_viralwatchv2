@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from tensorflow.keras.callbacks import EarlyStopping
 
 
-filepath = "/content/final_ml_training_dataset.csv"
+filepath = "/content/aimsktt_viralwatch/ml/dataset/final_ml_training_dataset.csv"
 
 
 df = pd.read_csv(filepath)
@@ -113,7 +113,7 @@ print("\n4. Saving Models and Scaler to disk...")
 
 # Define the models directory
 # models_dir = r"C:\Users\STUDENT\OneDrive\Desktop\KTT Fellowship\ViralWatch Project\aimsktt_viralwatch\ml\models"
-models_dir = "/content/models"
+models_dir = "/content/aimsktt_viralwatch/ml/models"
 
 
 os.makedirs(models_dir, exist_ok=True)
