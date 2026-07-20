@@ -121,7 +121,7 @@ def create_target_variable(df):
 
 if __name__ == "__main__":
     # If running in Google Colab, change this to your folder path, e.g., "/content/"
-    base_dir = r"C:\Users\STUDENT\OneDrive\Desktop\KTT Fellowship\ViralWatch Project\aimsktt_viralwatch\ml\dataset"
+    base_dir = "/content/aimsktt_viralwatch/ml/dataset"
     
     # Define file paths
     days_since_filepath = os.path.join(base_dir, "days_since_first_case.csv")
