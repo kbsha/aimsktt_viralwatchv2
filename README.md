@@ -1,3 +1,6 @@
+The whole project is now live on https://viralwatch.onrender.com/
+with full docker image
+
 # Incremental Data Update Pipeline
 
 ## Overview

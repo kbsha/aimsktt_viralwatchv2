@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: viralwatch-docker-test
+    runtime: docker
+    plan: free
+
+    image:
+      url: docker.io/kbshafenta/viralwatch:v1
+
+    envVars:
+      - key: DATABASE_URL
+        sync: false
