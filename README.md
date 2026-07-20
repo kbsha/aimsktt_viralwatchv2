@@ -354,10 +354,15 @@ The dashboard displays updated cross-border outbreak risk information covering:
 The incremental pipeline provides:
 
 ✅ Faster data processing compared with full dataset rebuilding
+
 ✅ Continuous outbreak surveillance capability
+
 ✅ Reliable handling of changing epidemiological information
+
 ✅ Updated machine learning predictions
+
 ✅ Near real-time dashboard monitoring
+
 ✅ Scalable architecture for future outbreak sources
 
 ---

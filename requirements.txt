@@ -10,6 +10,7 @@ beautifulsoup4
 lxml
 pdfplumber
 joblib
+psycopg2
 pytest
 # Database Integration (Cloud Postgres & Local SQLite support)
 SQLAlchemy>=2.0.0
